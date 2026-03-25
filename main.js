@@ -75,14 +75,14 @@ class Hoymiles extends utils.Adapter {
 
                 this.connection.on("connected", () => {
                     this.log.info("Connected to DTU");
-                    this.setStateAsync("info.connection", true, true);
+                    this.updateConnectionState();
                     this.requestInfo();
                     setTimeout(() => this.startPollCycle(), 3000);
                 });
 
                 this.connection.on("disconnected", () => {
                     this.log.warn("Disconnected from DTU");
-                    this.setStateAsync("info.connection", false, true);
+                    this.updateConnectionState();
                     this.stopPollCycle();
                 });
 
@@ -122,10 +122,7 @@ class Hoymiles extends utils.Adapter {
                     await this.cloud.login();
                     this.log.info("Cloud login successful");
                     await this.setStateAsync("cloud.connected", true, true);
-                    // If local is not enabled, cloud connection counts as "connected"
-                    if (!enableLocal) {
-                        await this.setStateAsync("info.connection", true, true);
-                    }
+                    await this.updateConnectionState();
 
                     // Get station list and select first station
                     const stations = await this.cloud.getStationList();
@@ -149,12 +146,16 @@ class Hoymiles extends utils.Adapter {
                 } catch (err) {
                     this.log.error(`Cloud login failed: ${err.message}`);
                     await this.setStateAsync("cloud.connected", false, true);
-                    if (!enableLocal) {
-                        await this.setStateAsync("info.connection", false, true);
-                    }
+                    await this.updateConnectionState();
                 }
             }
         }
+    }
+
+    async updateConnectionState() {
+        const localOk = this.connection && this.connection.connected;
+        const cloudOk = this.cloud && this.cloud.token;
+        await this.setStateAsync("info.connection", !!(localOk || cloudOk), true);
     }
 
     async createStateObjects() {
@@ -534,6 +535,7 @@ class Hoymiles extends utils.Adapter {
         } catch (err) {
             this.log.warn(`Cloud poll failed: ${err.message}`);
             await this.setStateAsync("cloud.connected", false, true);
+            await this.updateConnectionState();
         }
     }
 
