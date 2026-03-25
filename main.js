@@ -122,6 +122,10 @@ class Hoymiles extends utils.Adapter {
                     await this.cloud.login();
                     this.log.info("Cloud login successful");
                     await this.setStateAsync("cloud.connected", true, true);
+                    // If local is not enabled, cloud connection counts as "connected"
+                    if (!enableLocal) {
+                        await this.setStateAsync("info.connection", true, true);
+                    }
 
                     // Get station list and select first station
                     const stations = await this.cloud.getStationList();
@@ -145,6 +149,9 @@ class Hoymiles extends utils.Adapter {
                 } catch (err) {
                     this.log.error(`Cloud login failed: ${err.message}`);
                     await this.setStateAsync("cloud.connected", false, true);
+                    if (!enableLocal) {
+                        await this.setStateAsync("info.connection", false, true);
+                    }
                 }
             }
         }
