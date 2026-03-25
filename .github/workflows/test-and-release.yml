@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  check-and-lint:
     if: contains(github.event.head_commit.message, '[skip ci]') == false
     runs-on: ubuntu-latest
     steps:
@@ -24,16 +24,26 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run lint
+
+  build:
+    needs: [check-and-lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
       - run: npm run build
 
-  unit-tests:
-    needs: [lint]
+  adapter-tests:
+    needs: [build]
     if: contains(github.event.head_commit.message, '[skip ci]') == false
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        node-version: [20.x, 22.x]
-        os: [ubuntu-latest, windows-latest]
+        node-version: [18.x, 20.x, 22.x]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,7 +54,7 @@ jobs:
       - run: npm test
 
   deploy:
-    needs: [unit-tests]
+    needs: [adapter-tests]
     if: |
       contains(github.event.head_commit.message, '[skip ci]') == false &&
       github.event_name == 'push' &&
@@ -60,6 +70,9 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
+      - name: Extract version from package.json
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
       - name: Publish to npm
         run: npm publish
         env:
@@ -68,3 +81,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          name: "v${{ steps.version.outputs.version }}"
