@@ -1,14 +1,22 @@
 {
-    "connection": "Verbinding",
-    "cloud": "Cloud-instellingen",
+    "enableLocal": "Lokale verbinding (TCP)",
+    "enableLocalHelp": "Directe verbinding met de omvormer via TCP/Protobuf op poort 10081",
     "dtuHost": "DTU IP-adres / hostnaam",
     "dtuHostHelp": "IP-adres of hostnaam van de geïntegreerde DTU van de omvormer",
     "hostRequired": "IP-adres of hostnaam is vereist",
     "pollInterval": "Poll-interval (seconden)",
-    "pollIntervalHelp": "Tijd tussen gegevensopvragen in seconden (standaard: 30)",
-    "cloudPause": "Cloud-pauze inschakelen",
+    "pollIntervalHelp": "Tijd tussen gegevensopvragingen in seconden (standaard: 30)",
+    "cloudPause": "Cloudpauze inschakelen",
     "cloudPauseHelp": "Verbreekt periodiek de verbinding zodat de DTU gegevens naar de Hoymiles-cloud kan uploaden",
     "cloudPauseDuration": "Pauzeduur (seconden)",
     "cloudPauseDurationHelp": "Duur van de verbindingspauze voor cloud-upload (standaard: 40s)",
-    "cloudInfo": "De TCP-verbinding met de DTU blokkeert cloud-uploads. Als u de Hoymiles-cloud wilt blijven gebruiken, schakel dan de cloud-pauze in."
+    "enableCloud": "Cloudverbinding (S-Miles)",
+    "enableCloudHelp": "Gegevens opvragen uit de Hoymiles S-Miles cloud (dagelijkse/maandelijkse/jaarlijkse energie)",
+    "cloudUser": "S-Miles gebruikersnaam (e-mail)",
+    "cloudUserRequired": "E-mailadres is vereist",
+    "cloudPassword": "S-Miles wachtwoord",
+    "cloudPasswordRequired": "Wachtwoord is vereist",
+    "cloudPollInterval": "Cloud poll-interval (seconden)",
+    "cloudPollIntervalHelp": "Tijd tussen cloudopvragingen in seconden (standaard: 300)",
+    "cloudInfo": "De cloudverbinding maakt gebruik van de Hoymiles S-Miles API. Dagelijkse, maandelijkse en jaarlijkse energie en CO2-besparingen worden uit de cloud geladen."
 }

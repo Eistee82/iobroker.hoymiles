@@ -1,14 +1,22 @@
 {
-    "connection": "Conexión",
-    "cloud": "Configuración de la nube",
-    "dtuHost": "Dirección IP / nombre de host DTU",
+    "enableLocal": "Conexión local (TCP)",
+    "enableLocalHelp": "Conexión directa al inversor a través de TCP/Protobuf en el puerto 10081",
+    "dtuHost": "Dirección IP / nombre de host del DTU",
     "dtuHostHelp": "Dirección IP o nombre de host del DTU integrado del inversor",
     "hostRequired": "Se requiere la dirección IP o el nombre de host",
     "pollInterval": "Intervalo de consulta (segundos)",
-    "pollIntervalHelp": "Tiempo entre consultas de datos en segundos (predeterminado: 30)",
+    "pollIntervalHelp": "Tiempo entre consultas de datos en segundos (por defecto: 30)",
     "cloudPause": "Activar pausa en la nube",
     "cloudPauseHelp": "Se desconecta periódicamente para que el DTU pueda subir datos a la nube de Hoymiles",
     "cloudPauseDuration": "Duración de la pausa (segundos)",
-    "cloudPauseDurationHelp": "Duración de la pausa de conexión para la subida a la nube (predeterminado: 40s)",
-    "cloudInfo": "La conexión TCP al DTU bloquea las subidas a la nube. Si desea seguir usando la nube de Hoymiles, active la pausa en la nube."
+    "cloudPauseDurationHelp": "Duración de la pausa de conexión para la subida a la nube (por defecto: 40s)",
+    "enableCloud": "Conexión en la nube (S-Miles)",
+    "enableCloudHelp": "Consultar datos de la nube Hoymiles S-Miles (energía diaria/mensual/anual)",
+    "cloudUser": "Nombre de usuario S-Miles (email)",
+    "cloudUserRequired": "Se requiere la dirección de correo electrónico",
+    "cloudPassword": "Contraseña de S-Miles",
+    "cloudPasswordRequired": "Se requiere la contraseña",
+    "cloudPollInterval": "Intervalo de consulta en la nube (segundos)",
+    "cloudPollIntervalHelp": "Tiempo entre consultas a la nube en segundos (por defecto: 300)",
+    "cloudInfo": "La conexión en la nube utiliza la API de Hoymiles S-Miles. La energía diaria, mensual y anual, así como los ahorros de CO2, se cargan desde la nube."
 }

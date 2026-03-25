@@ -4,6 +4,7 @@ const utils = require("@iobroker/adapter-core");
 const DtuConnection = require("./lib/dtuConnection");
 const ProtobufHandler = require("./lib/protobufHandler");
 const Encryption = require("./lib/encryption");
+const CloudConnection = require("./lib/cloudConnection");
 const { channels, states } = require("./lib/stateDefinitions");
 const { getAlarmDescription } = require("./lib/alarmCodes");
 
@@ -19,29 +20,34 @@ class Hoymiles extends utils.Adapter {
         this.encryption = null;
         this.encryptionRequired = false;
 
+        this.cloud = null;
+        this.cloudPollTimer = null;
+        this.cloudStationId = null;
+
         this.pollTimer = null;
         this.infoTimer = null;
         this.inverterActive = true;
     }
 
     async onReady() {
-        // Validate config
-        if (!this.config.host) {
-            this.log.error("No DTU host configured. Please set the IP address or hostname in the adapter settings.");
-            await this.setStateAsync("info.connection", false, true);
+        const enableLocal = this.config.enableLocal !== false;
+        const enableCloud = !!this.config.enableCloud;
+
+        if (!enableLocal && !enableCloud) {
+            this.log.error("Neither local nor cloud connection is enabled. Please enable at least one in the adapter settings.");
             return;
         }
 
-        this.log.info(`Starting Hoymiles adapter for DTU at ${this.config.host}:10081`);
-
-        // Load protobuf definitions
-        this.protobuf = new ProtobufHandler();
-        try {
-            await this.protobuf.loadProtos();
-            this.log.info("Protobuf definitions loaded successfully");
-        } catch (err) {
-            this.log.error(`Failed to load protobuf definitions: ${err.message}`);
-            return;
+        // Load protobuf definitions (needed for local mode)
+        if (enableLocal) {
+            this.protobuf = new ProtobufHandler();
+            try {
+                await this.protobuf.loadProtos();
+                this.log.info("Protobuf definitions loaded successfully");
+            } catch (err) {
+                this.log.error(`Failed to load protobuf definitions: ${err.message}`);
+                return;
+            }
         }
 
         // Create state objects
@@ -52,53 +58,96 @@ class Hoymiles extends utils.Adapter {
         this.subscribeStates("inverter.active");
         this.subscribeStates("inverter.reboot");
 
-        // Create connection
-        this.connection = new DtuConnection(
-            this.config.host,
-            10081,
-            {
-                cloudPause: this.config.cloudPause !== false,
-                cloudPauseDuration: this.config.cloudPauseDuration || 40,
+        // --- Local TCP connection ---
+        if (enableLocal) {
+            if (!this.config.host) {
+                this.log.error("Local connection enabled but no DTU host configured.");
+            } else {
+                this.log.info(`Starting local connection to DTU at ${this.config.host}:10081`);
+                this.connection = new DtuConnection(
+                    this.config.host,
+                    10081,
+                    {
+                        cloudPause: this.config.cloudPause !== false,
+                        cloudPauseDuration: this.config.cloudPauseDuration || 40,
+                    }
+                );
+
+                this.connection.on("connected", () => {
+                    this.log.info("Connected to DTU");
+                    this.setStateAsync("info.connection", true, true);
+                    this.requestInfo();
+                    setTimeout(() => this.startPollCycle(), 3000);
+                });
+
+                this.connection.on("disconnected", () => {
+                    this.log.warn("Disconnected from DTU");
+                    this.setStateAsync("info.connection", false, true);
+                    this.stopPollCycle();
+                });
+
+                this.connection.on("message", (message) => {
+                    this.handleResponse(message);
+                });
+
+                this.connection.on("cloudPause", (paused) => {
+                    this.log.info(`Cloud pause: ${paused ? "active" : "ended"}`);
+                    this.setStateAsync("info.cloudPaused", paused, true);
+                    if (paused) {
+                        this.stopPollCycle();
+                    }
+                });
+
+                this.connection.on("error", (err, count) => {
+                    if (count === 1) {
+                        this.log.warn(`DTU not reachable: ${err.message}`);
+                    } else if (count && count % 10 === 0) {
+                        this.log.info(`DTU still not reachable (attempt ${count}), retrying...`);
+                    }
+                });
+
+                this.connection.connect();
             }
-        );
+        }
 
-        this.connection.on("connected", () => {
-            this.log.info("Connected to DTU");
-            this.setStateAsync("info.connection", true, true);
-            // First request: get device info (always unencrypted)
-            this.requestInfo();
-            // Start polling after short delay to allow info response first
-            setTimeout(() => this.startPollCycle(), 3000);
-        });
+        // --- Cloud connection ---
+        if (enableCloud) {
+            if (!this.config.cloudUser || !this.config.cloudPassword) {
+                this.log.error("Cloud connection enabled but credentials not configured.");
+            } else {
+                this.log.info("Starting cloud connection to Hoymiles S-Miles API");
+                this.cloud = new CloudConnection(this.config.cloudUser, this.config.cloudPassword);
 
-        this.connection.on("disconnected", () => {
-            this.log.warn("Disconnected from DTU");
-            this.setStateAsync("info.connection", false, true);
-            this.stopPollCycle();
-        });
+                try {
+                    await this.cloud.login();
+                    this.log.info("Cloud login successful");
+                    await this.setStateAsync("cloud.connected", true, true);
 
-        this.connection.on("message", (message) => {
-            this.handleResponse(message);
-        });
+                    // Get station list and select first station
+                    const stations = await this.cloud.getStationList();
+                    if (stations.length === 0) {
+                        this.log.error("No stations found in cloud account");
+                    } else {
+                        this.cloudStationId = stations[0].id;
+                        await this.setStateAsync("cloud.stationName", stations[0].name, true);
+                        await this.setStateAsync("cloud.stationId", this.cloudStationId, true);
+                        this.log.info(`Cloud station: ${stations[0].name} (ID: ${this.cloudStationId})`);
 
-        this.connection.on("cloudPause", (paused) => {
-            this.log.info(`Cloud pause: ${paused ? "active" : "ended"}`);
-            this.setStateAsync("info.cloudPaused", paused, true);
-            if (paused) {
-                this.stopPollCycle();
+                        // Initial cloud data fetch
+                        await this.pollCloudData();
+
+                        // Start cloud poll timer
+                        const cloudInterval = (this.config.cloudPollInterval || 300) * 1000;
+                        this.cloudPollTimer = setInterval(() => {
+                            this.pollCloudData();
+                        }, cloudInterval);
+                    }
+                } catch (err) {
+                    this.log.error(`Cloud login failed: ${err.message}`);
+                    await this.setStateAsync("cloud.connected", false, true);
+                }
             }
-        });
-
-        this.connection.on("error", (err, count) => {
-            if (count === 1) {
-                this.log.warn(`DTU not reachable: ${err.message}`);
-            } else if (count && count % 10 === 0) {
-                this.log.info(`DTU still not reachable (attempt ${count}), retrying...`);
-            }
-        });
-
-        // Connect
-        this.connection.connect();
+        }
     }
 
     async createStateObjects() {
@@ -448,15 +497,57 @@ class Hoymiles extends utils.Adapter {
         }
     }
 
+    async pollCloudData() {
+        if (!this.cloud || !this.cloudStationId) return;
+
+        try {
+            await this.cloud.ensureToken();
+            const data = await this.cloud.getStationRealtime(this.cloudStationId);
+
+            // Cloud-exclusive states: always update
+            await this.setStateAsync("cloud.todayEnergy", parseFloat(data.today_eq) || 0, true);
+            await this.setStateAsync("cloud.monthEnergy", parseFloat(data.month_eq) || 0, true);
+            await this.setStateAsync("cloud.yearEnergy", parseFloat(data.year_eq) || 0, true);
+            await this.setStateAsync("cloud.totalEnergy", parseFloat(data.total_eq) || 0, true);
+            await this.setStateAsync("cloud.currentPower", parseFloat(data.real_power) || 0, true);
+            await this.setStateAsync("cloud.co2Saved", parseFloat(data.co2_emission_reduction) || 0, true);
+            await this.setStateAsync("cloud.lastUpdate", data.data_time || "", true);
+            await this.setStateAsync("cloud.connected", true, true);
+
+            // Shared states: only update if DTU is NOT connected (local has priority)
+            const dtuConnected = this.connection && this.connection.connected;
+            if (!dtuConnected) {
+                const power = parseFloat(data.real_power) || 0;
+                await this.setStateAsync("grid.power", power, true);
+                await this.setStateAsync("inverter.dtuPower", power, true);
+                await this.setStateAsync("grid.dailyEnergy", parseFloat(data.today_eq) || 0, true);
+            }
+
+            this.log.debug(`Cloud data: ${data.real_power}W, today=${data.today_eq}Wh, month=${data.month_eq}Wh`);
+        } catch (err) {
+            this.log.warn(`Cloud poll failed: ${err.message}`);
+            await this.setStateAsync("cloud.connected", false, true);
+        }
+    }
+
     onUnload(callback) {
         try {
             this.stopPollCycle();
+            if (this.cloudPollTimer) {
+                clearInterval(this.cloudPollTimer);
+                this.cloudPollTimer = null;
+            }
             if (this.connection) {
                 this.connection.disconnect();
                 this.connection = null;
             }
+            if (this.cloud) {
+                this.cloud.disconnect();
+                this.cloud = null;
+            }
             this.setStateAsync("info.connection", false, true);
             this.setStateAsync("info.cloudPaused", false, true);
+            this.setStateAsync("cloud.connected", false, true);
         } catch (e) {
             // ignore
         }

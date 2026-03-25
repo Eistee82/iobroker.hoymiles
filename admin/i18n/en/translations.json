@@ -1,6 +1,6 @@
 {
-    "connection": "Connection",
-    "cloud": "Cloud Settings",
+    "enableLocal": "Local connection (TCP)",
+    "enableLocalHelp": "Direct connection to the inverter via TCP/Protobuf on port 10081",
     "dtuHost": "DTU IP address / hostname",
     "dtuHostHelp": "IP address or hostname of the inverter's integrated DTU",
     "hostRequired": "IP address or hostname is required",
@@ -10,5 +10,13 @@
     "cloudPauseHelp": "Periodically disconnects so the DTU can upload data to the Hoymiles cloud",
     "cloudPauseDuration": "Pause duration (seconds)",
     "cloudPauseDurationHelp": "Duration of connection pause for cloud upload (default: 40s)",
-    "cloudInfo": "The TCP connection to the DTU blocks cloud uploads. If you want to continue using the Hoymiles cloud, enable the cloud pause."
+    "enableCloud": "Cloud connection (S-Miles)",
+    "enableCloudHelp": "Query data from the Hoymiles S-Miles cloud (daily/monthly/yearly energy)",
+    "cloudUser": "S-Miles username (email)",
+    "cloudUserRequired": "Email address is required",
+    "cloudPassword": "S-Miles password",
+    "cloudPasswordRequired": "Password is required",
+    "cloudPollInterval": "Cloud poll interval (seconds)",
+    "cloudPollIntervalHelp": "Time between cloud queries in seconds (default: 300)",
+    "cloudInfo": "The cloud connection uses the Hoymiles S-Miles API. Daily, monthly and yearly energy as well as CO2 savings are loaded from the cloud."
 }

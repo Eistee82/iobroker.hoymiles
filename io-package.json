@@ -69,10 +69,15 @@
         "stopTimeout": 500
     },
     "native": {
+        "enableLocal": true,
         "host": "",
         "pollInterval": 30,
         "cloudPause": true,
-        "cloudPauseDuration": 40
+        "cloudPauseDuration": 40,
+        "enableCloud": false,
+        "cloudUser": "",
+        "cloudPassword": "",
+        "cloudPollInterval": 300
     },
     "instanceObjects": [
         {

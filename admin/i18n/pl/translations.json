@@ -1,14 +1,22 @@
 {
-    "connection": "Połączenie",
-    "cloud": "Ustawienia chmury",
+    "enableLocal": "Połączenie lokalne (TCP)",
+    "enableLocalHelp": "Bezpośrednie połączenie z falownikiem przez TCP/Protobuf na porcie 10081",
     "dtuHost": "Adres IP / nazwa hosta DTU",
     "dtuHostHelp": "Adres IP lub nazwa hosta zintegrowanego DTU falownika",
-    "hostRequired": "Wymagany jest adres IP lub nazwa hosta",
+    "hostRequired": "Adres IP lub nazwa hosta jest wymagany",
     "pollInterval": "Interwał odpytywania (sekundy)",
     "pollIntervalHelp": "Czas między zapytaniami o dane w sekundach (domyślnie: 30)",
-    "cloudPause": "Włącz pauzę chmury",
+    "cloudPause": "Włącz pauzę dla chmury",
     "cloudPauseHelp": "Okresowo rozłącza się, aby DTU mógł przesyłać dane do chmury Hoymiles",
     "cloudPauseDuration": "Czas trwania pauzy (sekundy)",
-    "cloudPauseDurationHelp": "Czas trwania pauzy połączenia dla przesyłania do chmury (domyślnie: 40s)",
-    "cloudInfo": "Połączenie TCP z DTU blokuje przesyłanie do chmury. Jeśli chcesz nadal korzystać z chmury Hoymiles, włącz pauzę chmury."
+    "cloudPauseDurationHelp": "Czas trwania pauzy połączenia do przesyłania do chmury (domyślnie: 40s)",
+    "enableCloud": "Połączenie z chmurą (S-Miles)",
+    "enableCloudHelp": "Pobieranie danych z chmury Hoymiles S-Miles (energia dzienna/miesięczna/roczna)",
+    "cloudUser": "Nazwa użytkownika S-Miles (email)",
+    "cloudUserRequired": "Adres e-mail jest wymagany",
+    "cloudPassword": "Hasło S-Miles",
+    "cloudPasswordRequired": "Hasło jest wymagane",
+    "cloudPollInterval": "Interwał odpytywania chmury (sekundy)",
+    "cloudPollIntervalHelp": "Czas między zapytaniami do chmury w sekundach (domyślnie: 300)",
+    "cloudInfo": "Połączenie z chmurą korzysta z API Hoymiles S-Miles. Energia dzienna, miesięczna i roczna oraz oszczędności CO2 są pobierane z chmury."
 }
