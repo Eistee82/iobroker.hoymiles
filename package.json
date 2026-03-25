@@ -1,27 +1,40 @@
 {
-    "name": "iobroker.hoymiles",
-    "version": "0.0.1",
-    "description": "ioBroker adapter for Hoymiles HMS inverters with integrated WiFi DTU",
-    "main": "main.js",
-    "scripts": {
-        "test": "echo \"no tests yet\" && exit 0"
-    },
-    "keywords": [
-        "ioBroker",
-        "hoymiles",
-        "solar",
-        "inverter",
-        "photovoltaic",
-        "HMS",
-        "dtu"
-    ],
-    "author": "Eistee",
-    "license": "MIT",
-    "dependencies": {
-        "@iobroker/adapter-core": "^3.0.0",
-        "protobufjs": "^7.2.0"
-    },
-    "engines": {
-        "node": ">=18.0.0"
-    }
+	"name": "iobroker.hoymiles",
+	"version": "0.0.1",
+	"description": "ioBroker adapter for Hoymiles HMS inverters with integrated WiFi DTU",
+	"main": "build/main.js",
+	"files": ["build/", "admin/", "io-package.json", "LICENSE"],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json && copyfiles -u 1 \"src/lib/proto/*.proto\" build/",
+		"watch": "tsc -p tsconfig.build.json --watch",
+		"lint": "eslint src/",
+		"check": "tsc --noEmit",
+		"test": "echo \"no tests yet\" && exit 0"
+	},
+	"keywords": [
+		"ioBroker",
+		"hoymiles",
+		"solar",
+		"inverter",
+		"photovoltaic",
+		"HMS",
+		"dtu"
+	],
+	"author": "Eistee",
+	"license": "MIT",
+	"dependencies": {
+		"@iobroker/adapter-core": "^3.0.0",
+		"protobufjs": "^7.2.0"
+	},
+	"devDependencies": {
+		"@iobroker/adapter-dev": "^1.3.0",
+		"@iobroker/eslint-config": "^1.0.0",
+		"@tsconfig/node20": "^20.1.0",
+		"@types/node": "^20.11.0",
+		"copyfiles": "^2.4.1",
+		"typescript": "~5.7.0"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
 }
