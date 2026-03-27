@@ -52,4 +52,4 @@ jobs:
         with:
           node-version: 20
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          npm-token: ${{ secrets.NPM_TOKEN }}
+          # npm-token: ${{ secrets.NPM_TOKEN }}  # Commented out for migration to Trusted Publishing
