@@ -1,88 +1,58 @@
-import * as net from "node:net";
-import { EventEmitter } from "node:events";
+import type * as net from "node:net";
+import TcpConnection from "./tcpConnection.js";
+import { HM_MAGIC_0, HM_MAGIC_1 } from "./constants.js";
+import { clearTimer } from "./utils.js";
 
-const MAGIC_0 = 0x48;
-const MAGIC_1 = 0x4d;
+const MAGIC_HEADER = Buffer.from([HM_MAGIC_0, HM_MAGIC_1]);
 const HEADER_SIZE = 10;
-const HEARTBEAT_TIMEOUT = 20000; // 20s idle → send heartbeat (like the app)
+const HEARTBEAT_TIMEOUT = 20000; // 20s idle → send heartbeat (app sends at ~20s idle, DTU native HB is 60s)
 const RECONNECT_DELAY_MIN = 1000;
-const RECONNECT_DELAY_MAX = 60000;
+const RECONNECT_DELAY_MAX = 300000;
 const MAX_FAILED_SENDS = 10;
 const MIN_REQUEST_INTERVAL = 500; // 500ms between requests for fast polling
 const IDLE_TIMEOUT = 300000; // 5 min no data → reconnect
+const INITIAL_BUFFER_SIZE = 4096;
+const MAX_BUFFER_SIZE = 131072; // 128KB guard
 
-class DtuConnection extends EventEmitter {
-	public connected: boolean;
-
-	private readonly host: string;
-	private readonly port: number;
+/** Persistent TCP connection to a Hoymiles DTU with heartbeat and reconnect. */
+class DtuConnection extends TcpConnection {
 	private readonly heartbeatGenerator: (() => Buffer) | null;
 
-	private socket: net.Socket | null;
 	private receiveBuffer: Buffer;
+	private receiveBufferLen: number;
 	private heartbeatTimer: ReturnType<typeof setTimeout> | null;
-	private reconnectTimer: ReturnType<typeof setTimeout> | null;
 	private idleTimer: ReturnType<typeof setTimeout> | null;
 	private lastRequestTime: number;
-	private destroyed: boolean;
-	private reconnectDelay: number;
 	private consecutiveFailedSends: number;
 
+	/**
+	 * @param host - DTU IP address
+	 * @param port - DTU TCP port (default 10081)
+	 * @param heartbeatGenerator - Optional callback to generate heartbeat messages
+	 */
 	constructor(host: string, port: number, heartbeatGenerator?: () => Buffer) {
-		super();
-		this.host = host;
-		this.port = port;
+		super(host, port, RECONNECT_DELAY_MIN, RECONNECT_DELAY_MAX);
 		this.heartbeatGenerator = heartbeatGenerator || null;
 
-		this.socket = null;
-		this.connected = false;
-		this.receiveBuffer = Buffer.alloc(0);
+		this.receiveBuffer = Buffer.alloc(INITIAL_BUFFER_SIZE);
+		this.receiveBufferLen = 0;
 		this.heartbeatTimer = null;
-		this.reconnectTimer = null;
 		this.idleTimer = null;
 		this.lastRequestTime = 0;
-		this.destroyed = false;
-		this.reconnectDelay = RECONNECT_DELAY_MIN;
 		this.consecutiveFailedSends = 0;
 	}
 
-	connect(): void {
-		if (this.destroyed) {
-			return;
-		}
-		if (this.socket) {
-			this.socket.destroy();
-			this.socket = null;
-		}
-
-		this.receiveBuffer = Buffer.alloc(0);
-		this.socket = new net.Socket();
-		this.socket.setKeepAlive(true);
-
-		this.socket.connect(this.port, this.host, () => {
-			this.connected = true;
-			this.reconnectDelay = RECONNECT_DELAY_MIN;
-			this.consecutiveFailedSends = 0;
-			this._resetHeartbeatTimer();
-			this._resetIdleTimer();
-			this.emit("connected");
-		});
-
-		this.socket.on("data", (chunk: Buffer) => this._onData(chunk));
-		this.socket.on("error", (err: Error) => this._handleDisconnect(err));
-		this.socket.on("close", () => this._handleDisconnect(null));
+	/** @inheritdoc */
+	override connect(): void {
+		this.receiveBufferLen = 0;
+		super.connect();
 	}
 
-	disconnect(): void {
-		this.destroyed = true;
-		this._stopTimers();
-		if (this.socket) {
-			this.socket.destroy();
-			this.socket = null;
-		}
-		this.connected = false;
-	}
-
+	/**
+	 * Send a binary message to the DTU, respecting minimum request interval.
+	 *
+	 * @param buffer - Raw message bytes to send
+	 */
 	async send(buffer: Buffer): Promise<boolean> {
 		if (!this.connected || !this.socket) {
 			return false;
@@ -116,75 +86,88 @@ class DtuConnection extends EventEmitter {
 		});
 	}
 
+	/** @inheritdoc */
+	protected _configureSocket(socket: net.Socket): void {
+		socket.setKeepAlive(true);
+		socket.on("data", (chunk: Buffer) => this._onData(chunk));
+	}
+
+	/** @inheritdoc */
+	protected _onConnected(): void {
+		this.consecutiveFailedSends = 0;
+		this._resetHeartbeatTimer();
+		this._resetIdleTimer();
+		this.emit("connected");
+	}
+
+	/** @inheritdoc */
+	protected _stopSessionTimers(): void {
+		this.heartbeatTimer = clearTimer(this.heartbeatTimer);
+		this.idleTimer = clearTimer(this.idleTimer);
+	}
+
 	private _onData(chunk: Buffer): void {
 		this._resetIdleTimer();
-		this.receiveBuffer = Buffer.concat([this.receiveBuffer, chunk]);
 
-		while (this.receiveBuffer.length >= HEADER_SIZE) {
-			if (this.receiveBuffer[0] !== MAGIC_0 || this.receiveBuffer[1] !== MAGIC_1) {
-				let found = false;
-				for (let i = 1; i < this.receiveBuffer.length - 1; i++) {
-					if (this.receiveBuffer[i] === MAGIC_0 && this.receiveBuffer[i + 1] === MAGIC_1) {
-						this.receiveBuffer = this.receiveBuffer.slice(i);
-						found = true;
-						break;
-					}
-				}
-				if (!found) {
-					this.receiveBuffer = Buffer.alloc(0);
+		// Grow buffer if needed
+		const needed = this.receiveBufferLen + chunk.length;
+		if (needed > MAX_BUFFER_SIZE) {
+			this.emit("error", new Error(`Receive buffer overflow (${needed} bytes), discarding buffer`));
+			this.receiveBufferLen = 0;
+			return;
+		}
+		if (needed > this.receiveBuffer.length) {
+			const newSize = Math.min(this.receiveBuffer.length * 2, MAX_BUFFER_SIZE);
+			const newBuf = Buffer.alloc(Math.max(newSize, needed));
+			this.receiveBuffer.copy(newBuf, 0, 0, this.receiveBufferLen);
+			this.receiveBuffer = newBuf;
+		}
+		chunk.copy(this.receiveBuffer, this.receiveBufferLen);
+		this.receiveBufferLen += chunk.length;
+
+		while (this.receiveBufferLen >= HEADER_SIZE) {
+			if (this.receiveBuffer[0] !== HM_MAGIC_0 || this.receiveBuffer[1] !== HM_MAGIC_1) {
+				const idx = this.receiveBuffer.subarray(0, this.receiveBufferLen).indexOf(MAGIC_HEADER, 1);
+				if (idx === -1) {
+					this.receiveBufferLen = 0;
 					return;
 				}
+				// Shift data to front
+				this.receiveBuffer.copy(this.receiveBuffer, 0, idx, this.receiveBufferLen);
+				this.receiveBufferLen -= idx;
 				continue;
 			}
 
 			const totalLen = (this.receiveBuffer[8] << 8) | this.receiveBuffer[9];
 			if (totalLen < HEADER_SIZE || totalLen > 65535) {
-				this.receiveBuffer = this.receiveBuffer.slice(1);
+				// Skip one byte
+				this.receiveBuffer.copy(this.receiveBuffer, 0, 1, this.receiveBufferLen);
+				this.receiveBufferLen -= 1;
 				continue;
 			}
-			if (this.receiveBuffer.length < totalLen) {
+			if (this.receiveBufferLen < totalLen) {
 				break;
 			}
 
-			const message = this.receiveBuffer.slice(0, totalLen);
-			this.receiveBuffer = this.receiveBuffer.slice(totalLen);
+			// Extract complete message (copy since buffer will be reused)
+			const message = Buffer.from(this.receiveBuffer.subarray(0, totalLen));
+			// Compact: shift remaining data to front
+			this.receiveBuffer.copy(this.receiveBuffer, 0, totalLen, this.receiveBufferLen);
+			this.receiveBufferLen -= totalLen;
 			this.emit("message", message);
 		}
 	}
 
-	private _handleDisconnect(err: Error | null): void {
-		const wasConnected = this.connected;
-		this.connected = false;
-		this._stopTimers();
-
-		if (!wasConnected || this.destroyed) {
-			if (wasConnected) {
-				this.emit("disconnected");
-			}
-			return;
-		}
-
-		if (err) {
-			this.emit("error", err);
-		}
-		this.emit("disconnected");
-
-		const delay = this.reconnectDelay;
-		this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_DELAY_MAX);
-		this.reconnectTimer = setTimeout(() => {
-			this.reconnectTimer = null;
-			if (!this.destroyed) {
-				this.connect();
-			}
-		}, delay);
-	}
-
 	/** Heartbeat only fires after 20s of idle (no send() calls). */
 	private _resetHeartbeatTimer(): void {
-		if (this.heartbeatTimer) {
-			clearTimeout(this.heartbeatTimer);
+		this.heartbeatTimer = clearTimer(this.heartbeatTimer);
+		if (this.destroyed) {
+			return;
 		}
 		this.heartbeatTimer = setTimeout(() => {
+			if (this.destroyed) {
+				return;
+			}
 			if (this.connected && this.socket && this.heartbeatGenerator) {
 				this.socket.write(this.heartbeatGenerator(), err => {
 					if (err) {
@@ -202,31 +185,20 @@ class DtuConnection extends EventEmitter {
 	}
 
 	private _resetIdleTimer(): void {
-		if (this.idleTimer) {
-			clearTimeout(this.idleTimer);
+		this.idleTimer = clearTimer(this.idleTimer);
+		if (this.destroyed) {
+			return;
 		}
 		this.idleTimer = setTimeout(() => {
+			if (this.destroyed) {
+				return;
+			}
 			if (this.connected) {
 				this.emit("idle");
 				this.socket?.destroy();
 			}
 		}, IDLE_TIMEOUT);
 	}
-
-	private _stopTimers(): void {
-		if (this.heartbeatTimer) {
-			clearTimeout(this.heartbeatTimer);
-			this.heartbeatTimer = null;
-		}
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer);
-			this.reconnectTimer = null;
-		}
-		if (this.idleTimer) {
-			clearTimeout(this.idleTimer);
-			this.idleTimer = null;
-		}
-	}
 }
 
-export = DtuConnection;
+export default DtuConnection;

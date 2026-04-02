@@ -15,6 +15,7 @@ npm-debug.log*
 
 # Coverage
 coverage/
+coverage-tmp/
 
 # Package artifacts
 iobroker.*.tgz

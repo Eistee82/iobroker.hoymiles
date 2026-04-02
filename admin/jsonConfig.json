@@ -2,28 +2,95 @@
     "type": "panel",
     "i18n": true,
     "items": {
+        "_headerLocal": {
+            "type": "header",
+            "text": "tabLocal",
+            "size": 4,
+            "xs": 12
+        },
         "enableLocal": {
             "type": "checkbox",
             "label": "enableLocal",
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
             "default": true,
             "help": "enableLocalHelp"
         },
-        "host": {
-            "type": "text",
-            "label": "dtuHost",
-            "placeholder": "192.168.1.100",
-            "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
+        "_discover": {
+            "type": "sendTo",
+            "command": "discover",
+            "jsonData": "{}",
+            "label": "discoverButton",
+            "icon": "search",
+            "variant": "contained",
+            "color": "grey",
+            "useNative": true,
+            "showProcess": true,
             "disabled": "!data.enableLocal",
-            "help": "dtuHostHelp"
+            "xs": 6,
+            "sm": 4,
+            "md": 3
+        },
+        "_testConnection": {
+            "type": "sendTo",
+            "command": "testConnections",
+            "jsonData": "{\"devices\": ${JSON.stringify(data.devices)}}",
+            "label": "testConnectionButton",
+            "icon": "send",
+            "variant": "contained",
+            "color": "grey",
+            "useNative": true,
+            "showProcess": true,
+            "disabled": "!data.enableLocal",
+            "xs": 6,
+            "sm": 4,
+            "md": 3
+        },
+        "devices": {
+            "type": "table",
+            "noDelete": false,
+            "ordered": false,
+            "disabled": "!data.enableLocal",
+            "xs": 12,
+            "items": [
+                {
+                    "type": "checkbox",
+                    "title": "deviceEnabled",
+                    "attr": "enabled",
+                    "width": "60px",
+                    "filter": false,
+                    "sort": false,
+                    "default": true
+                },
+                {
+                    "type": "text",
+                    "title": "deviceHost",
+                    "attr": "host",
+                    "width": "50%",
+                    "filter": false,
+                    "sort": false,
+                    "default": ""
+                },
+                {
+                    "type": "text",
+                    "title": "deviceSerial",
+                    "attr": "serial",
+                    "readOnly": true,
+                    "filter": false,
+                    "sort": false,
+                    "default": ""
+                },
+                {
+                    "type": "checkbox",
+                    "title": "deviceReachable",
+                    "attr": "reachable",
+                    "readOnly": true,
+                    "width": "60px",
+                    "filter": false,
+                    "sort": false,
+                    "default": false
+                }
+            ],
+            "help": "devicesHelp"
         },
         "dataInterval": {
             "type": "number",
@@ -32,10 +99,8 @@
             "min": 0,
             "max": 300,
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
+            "sm": 6,
+            "md": 4,
             "disabled": "!data.enableLocal",
             "help": "dataIntervalHelp"
         },
@@ -46,10 +111,8 @@
             "min": 1,
             "max": 60,
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
+            "sm": 6,
+            "md": 4,
             "disabled": "!data.enableLocal",
             "help": "slowPollFactorHelp"
         },
@@ -58,10 +121,7 @@
             "label": "enableCloudRelay",
             "default": true,
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
+            "md": 4,
             "disabled": "!data.enableLocal",
             "help": "enableCloudRelayHelp"
         },
@@ -69,34 +129,28 @@
             "type": "staticText",
             "text": "cloudRelayWarning",
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
-            "hidden": "!data.enableCloud || !data.enableLocal || data.enableCloudRelay",
+            "hidden": "!data.enableLocal || data.enableCloudRelay",
             "style": {
                 "fontSize": 13,
                 "color": "#e65100",
                 "fontWeight": "bold"
             }
         },
-        "_divider1": {
+        "_divider": {
             "type": "divider",
-            "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12
+            "xs": 12
+        },
+        "_headerCloud": {
+            "type": "header",
+            "text": "tabCloud",
+            "size": 4,
+            "xs": 12
         },
         "enableCloud": {
             "type": "checkbox",
             "label": "enableCloud",
             "default": false,
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
             "help": "enableCloudHelp"
         },
         "cloudUser": {
@@ -104,10 +158,7 @@
             "label": "cloudUser",
             "placeholder": "email@example.com",
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
+            "sm": 6,
             "disabled": "!data.enableCloud",
             "validator": "!data.enableCloud || data.cloudUser !== ''",
             "validatorErrorText": "cloudUserRequired"
@@ -116,38 +167,19 @@
             "type": "password",
             "label": "cloudPassword",
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
+            "sm": 6,
             "disabled": "!data.enableCloud",
             "validator": "!data.enableCloud || data.cloudPassword !== ''",
             "validatorErrorText": "cloudPasswordRequired"
-        },
-        "cloudDtuSerial": {
-            "type": "text",
-            "label": "cloudDtuSerial",
-            "placeholder": "4143A01CEDE4",
-            "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
-            "disabled": "!data.enableCloud || data.enableLocal",
-            "help": "cloudDtuSerialHelp"
         },
         "_cloudInfo": {
             "type": "staticText",
             "text": "cloudInfo",
             "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12,
-            "hidden": "!data.enableCloud",
             "style": {
                 "fontSize": 12,
-                "opacity": 0.7
+                "opacity": 0.7,
+                "marginTop": 8
             }
         }
     }

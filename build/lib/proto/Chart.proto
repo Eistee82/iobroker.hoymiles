@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+// LineChart format - used by count_by_day endpoints
+// From app: ChartPB.LineChart.parseFrom(bArr)
+message LineSeries {
+    string type = 1;                          // e.g. "MI_POWER", "MODULE_POWER"
+    repeated float data = 2 [packed = true];  // Data values (float32, not double!)
+    int32 did = 3;                            // Device ID
+    int32 port = 4;                           // Port number
+}
+
+message LineChart {
+    repeated string x_axis = 1;   // Time labels ("00:00", "00:20", ...)
+    repeated LineSeries series = 2; // Data series
+    string type = 3;              // Chart type
+}
+
+// ChartV2 format (alternative, used by some endpoints)
+message ChartV2 {
+    string key = 1;
+    string date = 2;
+    string quota = 3;
+    repeated int32 xp = 4 [packed = true];
+    repeated float data = 5 [packed = true];  // float32, not double!
+}
+
+message ChartArrayV2 {
+    repeated ChartV2 charts = 1;
+}

@@ -5,6 +5,7 @@ message HBReqDTO {
     int32 csq = 3;
     string dtu_serial_number = 4;
     string device_serial_number = 5;
+    int32 unknown_field6 = 6;
 }
 message HBResDTO {
     int32 offset = 1;
