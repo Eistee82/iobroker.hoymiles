@@ -55,6 +55,12 @@ const ALARM_CODES: Record<number, AlarmTranslation> = {
 		en: "INV overvoltage or overcurrent",
 		de: "Wechselrichter Überspannung oder Überstrom",
 	},
+	// Code 38: undocumented, not in S-Miles App warn_code.json.
+	// Observed when inverter shuts down at sunset due to low input power.
+	38: {
+		en: "Insufficient input power (shutting down)",
+		de: "Eingangsleistung zu gering (Abschaltung)",
+	},
 	46: {
 		en: "FB overvoltage",
 		de: "FB Überspannung",
@@ -464,7 +470,7 @@ function getAlarmDescription(code: number, lang?: string): string {
 	lang = lang || "en";
 	const entry = ALARM_CODES[code];
 	if (!entry) {
-		return `Unknown alarm code: ${code}`;
+		return `Unknown code: ${code}`;
 	}
 	return entry[lang as keyof AlarmTranslation] || entry.en;
 }

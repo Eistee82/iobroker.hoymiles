@@ -2,6 +2,7 @@
 # ioBroker.hoymiles
 
 ![Number of Installations](https://iobroker.live/badges/hoymiles-installed.svg)
+![Current version in stable repository](https://iobroker.live/badges/hoymiles-stable.svg)
 [![NPM version](https://img.shields.io/npm/v/iobroker.hoymiles.svg)](https://www.npmjs.com/package/iobroker.hoymiles)
 
 [![Test and Release](https://github.com/Eistee82/ioBroker.hoymiles/actions/workflows/test-and-release.yml/badge.svg)](https://github.com/Eistee82/ioBroker.hoymiles/actions/workflows/test-and-release.yml)
@@ -44,12 +45,14 @@ Two connection modes (independently configurable):
 - Sequence numbers in protocol framing (0-60000 wrap-around, matching original app)
 - AES-128-CBC encryption support for newer DTU firmware (SHA-256 key derivation from encRand)
 - Real-time data: power, voltage, current, frequency, energy, temperature
-- Per-panel monitoring (PV0/PV1)
+- Per-panel monitoring (PV0/PV1) — local and cloud
+- Per-inverter cloud data: power, voltage, frequency, temperature (Protobuf chart API)
 - Energy aggregates: daily, monthly, yearly, total (kWh)
 - Income calculation based on electricity price (cloud)
 - CO2 savings tracking (cloud)
 - Commands: power limit (2-100%), inverter on/off/reboot, DTU reboot, power factor limit, reactive power limit, clean warnings, clean grounding fault, lock/unlock inverter
 - Alarm and warning monitoring (109 codes DE/EN)
+- State quality (`q`): marks data as stale on disconnect, substitute for cloud fallback, auto-reset on reconnect
 - 5-minute idle timeout with automatic reconnect
 - Network discovery module for ioBroker.discovery
 - TypeScript, ESLint, Prettier, GitHub CI/CD
@@ -64,7 +67,7 @@ Open the adapter configuration in the ioBroker admin interface.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Enable local** | on | Enable direct TCP/Protobuf connection |
-| **DTU Host** | (empty) | IP address or hostname of the inverter. Leave empty for auto-discovery on adapter start. |
+| **DTU devices** | (empty) | Table of DTU IP addresses/hostnames. Add one row per DTU. |
 | **Data query interval** | 5s | Seconds between data requests (0-300). Set 0 for fastest possible (no delay between requests). |
 | **Config/alarm poll factor** | 6 | Config and alarms are queried every Nth data cycle. |
 | **Cloud Relay** | on | Forward real-time data to Hoymiles Cloud on behalf of the DTU. Prevents the local connection from blocking cloud uploads. |
@@ -76,7 +79,8 @@ Open the adapter configuration in the ioBroker admin interface.
 | **Enable cloud** | off | Enable Hoymiles S-Miles Cloud API |
 | **S-Miles Email** | — | Your S-Miles account email |
 | **S-Miles Password** | — | Your S-Miles account password (stored encrypted) |
-| **DTU Serial** | (empty) | For multiple inverters in your account: enter DTU serial to match the correct one. Leave empty for single inverter setups. |
+
+All inverters in your cloud account are automatically discovered. No manual serial number configuration needed.
 
 Both connections can be enabled simultaneously. Local data has priority — cloud data fills in when the DTU is offline (e.g. at night).
 
@@ -102,7 +106,7 @@ This adapter is designed for **Hoymiles HMS microinverters with integrated WiFi 
 | HMS-700W-2T | Untested |
 | HMS-800W-2T | **Tested** (Local + Cloud) |
 | HMS-900W-2T | Untested |
-| HMS-1000W-2T | Untested |
+| HMS-1000W-2T | **Tested** (Local) |
 
 **4 Strings (4T) — only DW variant:**
 
@@ -121,14 +125,32 @@ This adapter is designed for **Hoymiles HMS microinverters with integrated WiFi 
 
 ## Multiple Inverters
 
-If you have multiple inverters, simply create multiple adapter instances:
+This adapter supports multiple inverters in a single instance:
 
-- `hoymiles.0` → Inverter 1 (e.g. 192.168.178.87)
-- `hoymiles.1` → Inverter 2 (e.g. 192.168.178.88)
+- **Local:** Add multiple DTU IP addresses in the device table
+- **Cloud:** All inverters and stations in your account are automatically discovered
 
-Each instance has its own configuration and runs independently.
+Each DTU creates a device node using its serial number as ID (e.g. `hoymiles.0.4143A01CEDE4.*`).
+Cloud stations create aggregated device nodes (e.g. `hoymiles.0.station-12345.*`).
 
 ## Changelog
+
+### **WORK IN PROGRESS**
+- (@Eistee82) Multi-inverter support: multiple DTUs in a single adapter instance
+- (@Eistee82) Cloud auto-discovery: all inverters and stations in the account are automatically detected
+- (@Eistee82) Station-level aggregated data as separate device (power, energy, CO2, income)
+- (@Eistee82) Per-inverter and per-panel cloud realtime data (power, voltage, current, temperature)
+- (@Eistee82) Network discovery: scan for DTUs via admin UI button
+- (@Eistee82) Weather data per station: temperature, icon, description, sunrise/sunset
+- (@Eistee82) Firmware update check: daily check via cloud API
+- (@Eistee82) State quality (`q`): marks data as stale on disconnect (`0x42`), substitute for cloud fallback (`0x40`), auto-reset on reconnect
+- (@Eistee82) Night mode: reduced cloud polling when inverter is offline (weather + firmware only)
+- (@Eistee82) Cloud relay: configurable RealData interval from DTU serverSendTime, exponential backoff
+- (@Eistee82) Cloud login retry with exponential backoff (60s → max 600s)
+- (@Eistee82) Automatic config migration from v0.2.0 single-device format
+- (@Eistee82) Migrated to ESM (ECMAScript Modules) with Node.js >= 20.11.0
+- (@Eistee82) Fix: automatic reconnect when DTU is offline at adapter start
+- (@Eistee82) Fix: various connection lifecycle issues (socket cleanup, stale events, timer resets)
 
 ### 0.2.0 (2026-03-27)
 - (@Eistee82) Protocol rewrite based on original Hoymiles app decompilation and PCAP analysis

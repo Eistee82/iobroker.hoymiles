@@ -1,79 +1,24 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.HEADER_SIZE = exports.ACTION = exports.CMD = exports.ProtobufHandler = void 0;
-exports.formatDtuVersion = formatDtuVersion;
-exports.formatSwVersion = formatSwVersion;
-exports.formatInvVersion = formatInvVersion;
-const path = __importStar(require("node:path"));
-const protobuf = __importStar(require("protobufjs"));
-const alarmCodes_1 = require("./alarmCodes");
-/**
- * Format DTU version: major=n//4096, minor=(n//256)%16, patch=n%256
- *
- * @param n - Raw version number
- */
-function formatDtuVersion(n) {
-    const major = Math.floor(n / 4096);
-    const minor = Math.floor(n / 256) % 16;
-    const patch = n % 256;
-    return `V${String(major).padStart(2, "0")}.${String(minor).padStart(2, "0")}.${String(patch).padStart(2, "0")}`;
+import * as path from "node:path";
+import protobuf from "protobufjs";
+import { getAlarmDescription } from "./alarmCodes.js";
+import { crc16 } from "./crc16.js";
+import { DTU_TIME_OFFSET, HM_MAGIC_0, HM_MAGIC_1, SCALE_VOLTAGE, SCALE_POWER, SCALE_TEMPERATURE, SCALE_CURRENT, SCALE_FREQUENCY, SCALE_ENERGY, SCALE_POWER_FACTOR, } from "./constants.js";
+import { unixSeconds } from "./utils.js";
+function pad2(n) {
+    return String(n).padStart(2, "0");
 }
-/**
- * Format SW version: major=n//10000, minor=(n%10000)//100, patch=n%100
- *
- * @param n - Raw version number
- */
-function formatSwVersion(n) {
-    const major = Math.floor(n / 10000);
-    const minor = Math.floor((n % 10000) / 100);
-    const patch = n % 100;
-    return `V${String(major).padStart(2, "0")}.${String(minor).padStart(2, "0")}.${String(patch).padStart(2, "0")}`;
+function formatVersion(n, majorDiv, minorDiv, minorMod, patchMod) {
+    return `V${pad2(Math.floor(n / majorDiv))}.${pad2(Math.floor(n / minorDiv) % minorMod)}.${pad2(n % patchMod)}`;
 }
-/**
- * Format inverter FW version: major=n//2048, minor=(n//64)%32, patch=n%64
- *
- * @param n - Raw version number
- */
-function formatInvVersion(n) {
-    const major = Math.floor(n / 2048);
-    const minor = Math.floor(n / 64) % 32;
-    const patch = n % 64;
-    return `V${String(major).padStart(2, "0")}.${String(minor).padStart(2, "0")}.${String(patch).padStart(2, "0")}`;
+export function formatDtuVersion(n) {
+    return formatVersion(n, 4096, 256, 16, 256);
 }
-// Command IDs for requests (App -> DTU: 0xa3 prefix)
+export function formatSwVersion(n) {
+    return formatVersion(n, 10000, 100, 100, 100);
+}
+export function formatInvVersion(n) {
+    return formatVersion(n, 2048, 64, 32, 64);
+}
 const CMD = {
     REAL_DATA_NEW: [0xa3, 0x11],
     APP_INFO_DATA: [0xa3, 0x01],
@@ -91,8 +36,6 @@ const CMD = {
     DEV_CONFIG_FETCH: [0xa3, 0x07],
     DEV_CONFIG_PUT: [0xa3, 0x08],
 };
-exports.CMD = CMD;
-// Action codes for CommandResDTO
 const ACTION = {
     DTU_REBOOT: 1,
     INV_REBOOT: 3,
@@ -109,37 +52,64 @@ const ACTION = {
     REACTIVE_POWER_LIMIT: 48,
     ALARM_LIST: 50,
 };
-exports.ACTION = ACTION;
-const MAGIC = [0x48, 0x4d]; // "HM"
+const MAGIC = [HM_MAGIC_0, HM_MAGIC_1];
 const HEADER_SIZE = 10;
-exports.HEADER_SIZE = HEADER_SIZE;
-const DTU_TIME_OFFSET = 28800;
 const SEQ_MAX = 60000;
-/** Handler for encoding and decoding Hoymiles protobuf messages. */
+const num = (v) => (typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) || 0 : 0);
+const arr = (v) => (Array.isArray(v) ? v : []);
+const scaled = (v, div) => (div === 0 ? 0 : num(v) / div);
+const serialToHex = (v) => (Number(v) || 0).toString(16).toUpperCase();
+const formatIpv4 = (a, b, c, d) => [num(a), num(b), num(c), num(d)].join(".");
+const formatMac = (a, b, c, d, e, f) => [a, b, c, d, e, f].map(v => num(v).toString(16).padStart(2, "0").toUpperCase()).join(":");
+const writeU16BE = (buf, off, val) => {
+    buf[off] = (val >> 8) & 0xff;
+    buf[off + 1] = val & 0xff;
+};
 class ProtobufHandler {
     protos;
     seq;
-    /** Create a new ProtobufHandler instance. */
+    cachedTimeStr;
+    cachedTimeSec;
+    types = new Map();
     constructor() {
         this.protos = {};
         this.seq = 0;
+        this.cachedTimeStr = null;
+        this.cachedTimeSec = 0;
     }
-    /** Get next sequence number (0-60000, wraps around like the app). */
+    getType(proto, name) {
+        const key = `${proto}.${name}`;
+        let type = this.types.get(key);
+        if (!type) {
+            type = this.protos[proto].lookupType(name);
+            this.types.set(key, type);
+        }
+        return type;
+    }
+    decodePayload(proto, name, payload) {
+        const type = this.getType(proto, name);
+        const msg = type.decode(payload);
+        return type.toObject(msg, { longs: Number, defaults: true });
+    }
     nextSeq() {
         const current = this.seq;
         this.seq = current >= SEQ_MAX ? 0 : current + 1;
         return current;
     }
-    /** Format timestamp as "YYYY-MM-DD HH:mm:ss" UTF-8 bytes for heartbeat/ack. */
     formatTimeYmdHms() {
+        const sec = unixSeconds();
+        if (this.cachedTimeStr && sec === this.cachedTimeSec) {
+            return this.cachedTimeStr;
+        }
         const now = new Date();
         const str = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ` +
             `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
-        return Buffer.from(str, "utf-8");
+        this.cachedTimeStr = Buffer.from(str, "utf-8");
+        this.cachedTimeSec = sec;
+        return this.cachedTimeStr;
     }
-    /** Load all protobuf definition files from the proto directory. */
     async loadProtos() {
-        const protoDir = path.join(__dirname, "proto");
+        const protoDir = path.join(import.meta.dirname, "proto");
         const files = [
             "RealDataNew",
             "GetConfig",
@@ -155,63 +125,50 @@ class ProtobufHandler {
             "AutoSearch",
             "DevConfig",
         ];
-        for (const file of files) {
-            const root = await protobuf.load(path.join(protoDir, `${file}.proto`));
-            this.protos[file] = root;
+        const loaded = await Promise.all(files.map(file => protobuf.load(path.join(protoDir, `${file}.proto`))));
+        for (let i = 0; i < files.length; i++) {
+            this.protos[files[i]] = loaded[i];
+        }
+        const typeSpecs = [
+            ["RealDataNew", "RealDataNewResDTO"],
+            ["RealDataNew", "RealDataNewReqDTO"],
+            ["APPInformationData", "APPInfoDataResDTO"],
+            ["APPInformationData", "APPInfoDataReqDTO"],
+            ["GetConfig", "GetConfigResDTO"],
+            ["GetConfig", "GetConfigReqDTO"],
+            ["CommandPB", "CommandResDTO"],
+            ["CommandPB", "CommandReqDTO"],
+            ["SetConfig", "SetConfigResDTO"],
+            ["APPHeartbeatPB", "HBResDTO"],
+            ["APPHeartbeatPB", "HBReqDTO"],
+            ["AlarmData", "WInfoReqDTO"],
+            ["WarnData", "WarnReqDTO"],
+            ["AppGetHistPower", "AppGetHistPowerReqDTO"],
+            ["EventData", "EventDataReqDTO"],
+            ["AutoSearch", "AutoSearchResDTO"],
+            ["AutoSearch", "AutoSearchReqDTO"],
+            ["DevConfig", "DevConfigFetchResDTO"],
+            ["DevConfig", "DevConfigFetchReqDTO"],
+            ["NetworkInfo", "NetworkInfoReqDTO"],
+        ];
+        for (const [proto, name] of typeSpecs) {
+            this.getType(proto, name);
         }
     }
-    /**
-     * CRC16 with polynomial 0x18005 (CRC-16/MODBUS).
-     *
-     * @param buffer - The data to compute CRC over
-     * @returns The 16-bit CRC value
-     */
-    crc16(buffer) {
-        let crc = 0xffff;
-        for (const byte of buffer) {
-            crc ^= byte;
-            for (let i = 0; i < 8; i++) {
-                if (crc & 1) {
-                    crc = (crc >> 1) ^ 0xa001;
-                }
-                else {
-                    crc >>= 1;
-                }
-            }
-        }
-        return crc;
-    }
-    /**
-     * Build a framed message with HM header.
-     *
-     * @param cmdHigh - High byte of command ID
-     * @param cmdLow - Low byte of command ID
-     * @param protobufPayload - The protobuf-encoded payload
-     * @returns Complete message buffer with header
-     */
-    buildMessage(cmdHigh, cmdLow, protobufPayload) {
-        const crc = this.crc16(protobufPayload);
+    buildMessage(cmdHigh, cmdLow, protobufPayload, overrideSeq) {
+        const crc = crc16(protobufPayload);
         const totalLen = HEADER_SIZE + protobufPayload.length;
-        const seq = this.nextSeq();
+        const seq = overrideSeq ?? this.nextSeq();
         const header = Buffer.alloc(HEADER_SIZE);
         header[0] = MAGIC[0];
         header[1] = MAGIC[1];
         header[2] = cmdHigh;
         header[3] = cmdLow;
-        header[4] = (seq >> 8) & 0xff;
-        header[5] = seq & 0xff;
-        header[6] = (crc >> 8) & 0xff;
-        header[7] = crc & 0xff;
-        header[8] = (totalLen >> 8) & 0xff;
-        header[9] = totalLen & 0xff;
+        writeU16BE(header, 4, seq);
+        writeU16BE(header, 6, crc);
+        writeU16BE(header, 8, totalLen);
         return Buffer.concat([header, protobufPayload]);
     }
-    /**
-     * Parse a raw response buffer into command ID and payload.
-     *
-     * @param buffer - The raw message buffer
-     * @returns Parsed response or null if invalid
-     */
     parseResponse(buffer) {
         if (buffer.length < HEADER_SIZE) {
             return null;
@@ -221,8 +178,15 @@ class ProtobufHandler {
         }
         const cmdHigh = buffer[2];
         const cmdLow = buffer[3];
+        const storedCrc = (buffer[6] << 8) | buffer[7];
         const totalLen = (buffer[8] << 8) | buffer[9];
-        const payload = buffer.slice(HEADER_SIZE, totalLen);
+        const payload = buffer.subarray(HEADER_SIZE, totalLen);
+        if (payload.length > 0 && storedCrc !== 0) {
+            const computedCrc = crc16(payload);
+            if (storedCrc !== computedCrc) {
+                return null;
+            }
+        }
         return {
             cmdHigh,
             cmdLow,
@@ -230,15 +194,8 @@ class ProtobufHandler {
             totalLen,
         };
     }
-    // --- Encode Requests ---
-    /**
-     * Encode a RealDataNew request message.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeRealDataNewRequest(timestamp) {
-        const ResDTO = this.protos.RealDataNew.lookupType("RealDataNewResDTO");
+        const ResDTO = this.getType("RealDataNew", "RealDataNewResDTO");
         const msg = ResDTO.create({
             timeYmdHms: this.formatTimeYmdHms(),
             offset: DTU_TIME_OFFSET,
@@ -249,14 +206,8 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.REAL_DATA_NEW[0], CMD.REAL_DATA_NEW[1], payload);
     }
-    /**
-     * Encode an AppInfoData request message.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeInfoRequest(timestamp) {
-        const ResDTO = this.protos.APPInformationData.lookupType("APPInfoDataResDTO");
+        const ResDTO = this.getType("APPInformationData", "APPInfoDataResDTO");
         const msg = ResDTO.create({
             time: timestamp,
             offset: DTU_TIME_OFFSET,
@@ -264,14 +215,8 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.APP_INFO_DATA[0], CMD.APP_INFO_DATA[1], payload);
     }
-    /**
-     * Encode a GetConfig request message.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeGetConfigRequest(timestamp) {
-        const ResDTO = this.protos.GetConfig.lookupType("GetConfigResDTO");
+        const ResDTO = this.getType("GetConfig", "GetConfigResDTO");
         const msg = ResDTO.create({
             offset: DTU_TIME_OFFSET,
             time: timestamp,
@@ -279,125 +224,39 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.GET_CONFIG[0], CMD.GET_CONFIG[1], payload);
     }
-    /**
-     * Encode an alarm list trigger command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
+    encodeCommandAction(action, timestamp, data, cmd, devKind = 1) {
+        const ResDTO = this.getType("CommandPB", "CommandResDTO");
+        const msg = ResDTO.create({
+            time: timestamp,
+            action,
+            devKind,
+            packageNub: 1,
+            tid: timestamp,
+            ...(data && { data }),
+        });
+        const c = cmd || CMD.COMMAND;
+        return this.buildMessage(c[0], c[1], ResDTO.encode(msg).finish());
+    }
     encodeAlarmTrigger(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.ALARM_LIST,
-            devKind: 0,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.ALARM_LIST, timestamp, undefined, undefined, 0);
     }
-    /**
-     * Encode a micro-inverter warning history request (Action 46).
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeMiWarnRequest(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.READ_MI_HU_WARN,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.READ_MI_HU_WARN, timestamp);
     }
-    /**
-     * Encode a power limit command.
-     *
-     * @param percent - Power limit percentage (2-100)
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeSetPowerLimit(percent, timestamp) {
-        const limitValue = Math.round(percent * 10);
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.LIMIT_POWER,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-            data: `A:${limitValue},B:0,C:0\r`,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.LIMIT_POWER, timestamp, `A:${Math.round(percent * 10)},B:0,C:0\r`);
     }
-    /**
-     * Encode an inverter turn-on command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeInverterOn(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.MI_START,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND_CLOUD[0], CMD.COMMAND_CLOUD[1], payload);
+        return this.encodeCommandAction(ACTION.MI_START, timestamp, undefined, CMD.COMMAND_CLOUD);
     }
-    /**
-     * Encode an inverter shutdown command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeInverterOff(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.MI_SHUTDOWN,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND_CLOUD[0], CMD.COMMAND_CLOUD[1], payload);
+        return this.encodeCommandAction(ACTION.MI_SHUTDOWN, timestamp, undefined, CMD.COMMAND_CLOUD);
     }
-    /**
-     * Encode an inverter reboot command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @returns Framed message buffer
-     */
     encodeInverterReboot(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.INV_REBOOT,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND_CLOUD[0], CMD.COMMAND_CLOUD[1], payload);
+        return this.encodeCommandAction(ACTION.INV_REBOOT, timestamp, undefined, CMD.COMMAND_CLOUD);
     }
-    /**
-     * Encode a SetConfig message to write DTU configuration.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @param config - Configuration fields to set
-     * @returns Framed message buffer
-     */
     encodeSetConfig(timestamp, config) {
-        const ResDTO = this.protos.SetConfig.lookupType("SetConfigResDTO");
+        const ResDTO = this.getType("SetConfig", "SetConfigResDTO");
         const msg = ResDTO.create({
             offset: DTU_TIME_OFFSET,
             time: timestamp,
@@ -406,27 +265,8 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.SET_CONFIG[0], CMD.SET_CONFIG[1], payload);
     }
-    /**
-     * Encode a historical power data request message.
-     *
-     * @returns Framed message buffer
-     */
-    encodeHistPowerRequest() {
-        const ResDTO = this.protos.AppGetHistPower.lookupType("AppGetHistPowerResDTO");
-        const msg = ResDTO.create({
-            cp: 0,
-            offset: DTU_TIME_OFFSET,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.HIST_POWER[0], CMD.HIST_POWER[1], payload);
-    }
-    /**
-     * Encode a heartbeat message.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeHeartbeat(timestamp) {
-        const ResDTO = this.protos.APPHeartbeatPB.lookupType("HBResDTO");
+        const ResDTO = this.getType("APPHeartbeatPB", "HBResDTO");
         const msg = ResDTO.create({
             offset: DTU_TIME_OFFSET,
             time: timestamp,
@@ -435,167 +275,32 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.HEARTBEAT[0], CMD.HEARTBEAT[1], payload);
     }
-    /**
-     * Encode a network info request.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
-    encodeNetworkInfoRequest(timestamp) {
-        const ResDTO = this.protos.NetworkInfo.lookupType("NetworkInfoResDTO");
-        const msg = ResDTO.create({
-            offset: DTU_TIME_OFFSET,
-            time: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.NETWORK_INFO[0], CMD.NETWORK_INFO[1], payload);
-    }
-    /**
-     * Encode a DTU reboot command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeDtuReboot(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.DTU_REBOOT,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND_CLOUD[0], CMD.COMMAND_CLOUD[1], payload);
+        return this.encodeCommandAction(ACTION.DTU_REBOOT, timestamp, undefined, CMD.COMMAND_CLOUD);
     }
-    /**
-     * Enable performance data mode for faster DTU internal updates.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodePerformanceDataMode(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.PERFORMANCE_DATA_MODE,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.PERFORMANCE_DATA_MODE, timestamp);
     }
-    /**
-     * Encode a power factor limit command.
-     *
-     * @param value - Power factor (-1.0 to -0.8 or 0.8 to 1.0)
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodePowerFactorLimit(value, timestamp) {
-        const limitValue = Math.round(value * 1000);
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.POWER_FACTOR_LIMIT,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-            data: `A:${limitValue},B:0,C:0\r`,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.POWER_FACTOR_LIMIT, timestamp, `A:${Math.round(value * 1000)},B:0,C:0\r`);
     }
-    /**
-     * Encode a reactive power limit command.
-     *
-     * @param degrees - Reactive power angle (-50 to +50 degrees)
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeReactivePowerLimit(degrees, timestamp) {
-        const limitValue = Math.round(degrees * 10);
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.REACTIVE_POWER_LIMIT,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-            data: `A:${limitValue},B:0,C:0\r`,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.REACTIVE_POWER_LIMIT, timestamp, `A:${Math.round(degrees * 10)},B:0,C:0\r`);
     }
-    /**
-     * Encode a clean warnings command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeCleanWarnings(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.CLEAN_WARN,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.CLEAN_WARN, timestamp);
     }
-    /**
-     * Encode a clean grounding fault command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeCleanGroundingFault(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.CLEAN_GROUNDING_FAULT,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.CLEAN_GROUNDING_FAULT, timestamp);
     }
-    /**
-     * Encode an inverter lock command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeLockInverter(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.LOCK,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.LOCK, timestamp, undefined, CMD.COMMAND_CLOUD);
     }
-    /**
-     * Encode an inverter unlock command.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeUnlockInverter(timestamp) {
-        const ResDTO = this.protos.CommandPB.lookupType("CommandResDTO");
-        const msg = ResDTO.create({
-            time: timestamp,
-            action: ACTION.UNLOCK,
-            devKind: 1,
-            packageNub: 1,
-            tid: timestamp,
-        });
-        const payload = ResDTO.encode(msg).finish();
-        return this.buildMessage(CMD.COMMAND[0], CMD.COMMAND[1], payload);
+        return this.encodeCommandAction(ACTION.UNLOCK, timestamp, undefined, CMD.COMMAND_CLOUD);
     }
-    /**
-     * Encode an AutoSearch request to discover connected inverters.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     */
     encodeAutoSearch(timestamp) {
-        const ResDTO = this.protos.AutoSearch.lookupType("AutoSearchResDTO");
+        const ResDTO = this.getType("AutoSearch", "AutoSearchResDTO");
         const msg = ResDTO.create({
             offset: DTU_TIME_OFFSET,
             time: timestamp,
@@ -603,15 +308,8 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.AUTO_SEARCH[0], CMD.AUTO_SEARCH[1], payload);
     }
-    /**
-     * Encode a DevConfig fetch request.
-     *
-     * @param timestamp - Unix timestamp in seconds
-     * @param dtuSn - DTU serial number
-     * @param devSn - Device serial number
-     */
     encodeDevConfigFetch(timestamp, dtuSn, devSn) {
-        const ResDTO = this.protos.DevConfig.lookupType("DevConfigFetchResDTO");
+        const ResDTO = this.getType("DevConfig", "DevConfigFetchResDTO");
         const msg = ResDTO.create({
             responseTime: timestamp,
             transactionId: timestamp,
@@ -621,181 +319,138 @@ class ProtobufHandler {
         const payload = ResDTO.encode(msg).finish();
         return this.buildMessage(CMD.DEV_CONFIG_FETCH[0], CMD.DEV_CONFIG_FETCH[1], payload);
     }
-    // --- Decode Responses ---
-    /**
-     * Decode a RealDataNew response payload.
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded real data result
-     */
     decodeRealDataNew(payload) {
-        const ReqDTO = this.protos.RealDataNew.lookupType("RealDataNewReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
+        const obj = this.decodePayload("RealDataNew", "RealDataNewReqDTO", payload);
         const result = {
             dtuSn: obj.deviceSerialNumber || "",
-            timestamp: obj.timestamp || 0,
-            dtuPower: (Number(obj.dtuPower) || 0) / 10,
-            dtuDailyEnergy: Number(obj.dtuDailyEnergy) || 0,
+            timestamp: num(obj.timestamp),
+            dtuPower: scaled(obj.dtuPower, SCALE_POWER),
+            dtuDailyEnergy: num(obj.dtuDailyEnergy),
             sgs: [],
             pv: [],
             meter: [],
         };
-        if (obj.sgsData) {
-            for (const sgs of obj.sgsData) {
-                result.sgs.push({
-                    serialNumber: (Number(sgs.serialNumber) || 0).toString(16).toUpperCase(),
-                    firmwareVersion: sgs.firmwareVersion || 0,
-                    voltage: (sgs.voltage || 0) / 10,
-                    frequency: (sgs.frequency || 0) / 100,
-                    activePower: (sgs.activePower || 0) / 10,
-                    reactivePower: (sgs.reactivePower || 0) / 10,
-                    current: (sgs.current || 0) / 100,
-                    powerFactor: (sgs.powerFactor || 0) / 1000,
-                    temperature: (sgs.temperature || 0) / 10,
-                    warningNumber: sgs.warningNumber || 0,
-                    crcChecksum: sgs.crcChecksum || 0,
-                    linkStatus: sgs.linkStatus || 0,
-                    powerLimit: (sgs.powerLimit || 0) / 10,
-                    modulationIndexSignal: sgs.modulationIndexSignal || 0,
-                });
-            }
+        for (const sgs of arr(obj.sgsData)) {
+            result.sgs.push({
+                serialNumber: serialToHex(sgs.serialNumber),
+                firmwareVersion: num(sgs.firmwareVersion),
+                voltage: scaled(sgs.voltage, SCALE_VOLTAGE),
+                frequency: scaled(sgs.frequency, SCALE_FREQUENCY),
+                activePower: scaled(sgs.activePower, SCALE_POWER),
+                reactivePower: scaled(sgs.reactivePower, SCALE_POWER),
+                current: scaled(sgs.current, SCALE_CURRENT),
+                powerFactor: scaled(sgs.powerFactor, SCALE_POWER_FACTOR),
+                temperature: scaled(sgs.temperature, SCALE_TEMPERATURE),
+                warningNumber: num(sgs.warningNumber),
+                crcChecksum: num(sgs.crcChecksum),
+                linkStatus: num(sgs.linkStatus),
+                powerLimit: scaled(sgs.powerLimit, SCALE_POWER),
+                modulationIndexSignal: num(sgs.modulationIndexSignal),
+            });
         }
-        if (obj.pvData) {
-            for (const pv of obj.pvData) {
-                result.pv.push({
-                    serialNumber: (Number(pv.serialNumber) || 0).toString(16).toUpperCase(),
-                    portNumber: pv.portNumber || 0,
-                    voltage: (pv.voltage || 0) / 10,
-                    current: (pv.current || 0) / 100,
-                    power: (pv.power || 0) / 10,
-                    energyTotal: pv.energyTotal || 0,
-                    energyDaily: pv.energyDaily || 0,
-                    errorCode: pv.errorCode || 0,
-                });
-            }
+        for (const pv of arr(obj.pvData)) {
+            result.pv.push({
+                serialNumber: serialToHex(pv.serialNumber),
+                portNumber: num(pv.portNumber),
+                voltage: scaled(pv.voltage, SCALE_VOLTAGE),
+                current: scaled(pv.current, SCALE_CURRENT),
+                power: scaled(pv.power, SCALE_POWER),
+                energyTotal: num(pv.energyTotal),
+                energyDaily: num(pv.energyDaily),
+                errorCode: num(pv.errorCode),
+            });
         }
-        if (obj.meterData) {
-            for (const m of obj.meterData) {
-                result.meter.push({
-                    deviceType: m.deviceType || 0,
-                    serialNumber: (Number(m.serialNumber) || 0).toString(16).toUpperCase(),
-                    phaseTotalPower: m.phaseTotalPower || 0,
-                    phaseAPower: m.phase_APower || 0,
-                    phaseBPower: m.phase_BPower || 0,
-                    phaseCPower: m.phase_CPower || 0,
-                    powerFactorTotal: (m.powerFactorTotal || 0) / 1000,
-                    energyTotalPower: (m.energyTotalPower || 0) / 100,
-                    energyTotalConsumed: (m.energyTotalConsumed || 0) / 100,
-                    faultCode: m.faultCode || 0,
-                    voltagePhaseA: (m.voltagePhase_A || 0) / 10,
-                    voltagePhaseB: (m.voltagePhase_B || 0) / 10,
-                    voltagePhaseC: (m.voltagePhase_C || 0) / 10,
-                    currentPhaseA: (m.currentPhase_A || 0) / 100,
-                    currentPhaseB: (m.currentPhase_B || 0) / 100,
-                    currentPhaseC: (m.currentPhase_C || 0) / 100,
-                });
-            }
+        for (const m of arr(obj.meterData)) {
+            result.meter.push({
+                deviceType: num(m.deviceType),
+                serialNumber: serialToHex(m.serialNumber),
+                phaseTotalPower: num(m.phaseTotalPower),
+                phaseAPower: num(m.phase_APower),
+                phaseBPower: num(m.phase_BPower),
+                phaseCPower: num(m.phase_CPower),
+                powerFactorTotal: scaled(m.powerFactorTotal, SCALE_POWER_FACTOR),
+                energyTotalPower: scaled(m.energyTotalPower, SCALE_ENERGY),
+                energyTotalConsumed: scaled(m.energyTotalConsumed, SCALE_ENERGY),
+                faultCode: num(m.faultCode),
+                voltagePhaseA: scaled(m.voltagePhase_A, SCALE_VOLTAGE),
+                voltagePhaseB: scaled(m.voltagePhase_B, SCALE_VOLTAGE),
+                voltagePhaseC: scaled(m.voltagePhase_C, SCALE_VOLTAGE),
+                currentPhaseA: scaled(m.currentPhase_A, SCALE_CURRENT),
+                currentPhaseB: scaled(m.currentPhase_B, SCALE_CURRENT),
+                currentPhaseC: scaled(m.currentPhase_C, SCALE_CURRENT),
+            });
         }
         return result;
     }
-    /**
-     * Decode an AppInfoData response payload.
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded info data result
-     */
     decodeInfoData(payload) {
-        const ReqDTO = this.protos.APPInformationData.lookupType("APPInfoDataReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
+        const obj = this.decodePayload("APPInformationData", "APPInfoDataReqDTO", payload);
         const result = {
             dtuSn: obj.dtuSerialNumber || "",
-            timestamp: obj.timestamp || 0,
-            deviceNumber: obj.deviceNumber || 0,
-            pvNumber: obj.pvNumber || 0,
+            timestamp: num(obj.timestamp),
+            deviceNumber: num(obj.deviceNumber),
+            pvNumber: num(obj.pvNumber),
             dtuInfo: null,
             pvInfo: [],
         };
         if (obj.dtuInfo) {
             const di = obj.dtuInfo;
             result.dtuInfo = {
-                deviceKind: di.deviceKind || 0,
-                swVersion: di.dtuSwVersion || 0,
-                hwVersion: di.dtuHwVersion || 0,
-                signalStrength: di.signalStrength || 0,
-                errorCode: di.dtuErrorCode || 0,
-                dfs: Number(di.dfs) || 0,
+                deviceKind: num(di.deviceKind),
+                swVersion: num(di.dtuSwVersion),
+                hwVersion: num(di.dtuHwVersion),
+                signalStrength: num(di.signalStrength),
+                errorCode: num(di.dtuErrorCode),
+                dfs: num(di.dfs),
                 encRand: di.encRand || null,
-                type: di.type || 0,
-                dtuStepTime: di.dtuStepTime || 0,
-                dtuRfHwVersion: di.dtuRfHwVersion || 0,
-                dtuRfSwVersion: di.dtuRfSwVersion || 0,
-                accessModel: di.accessModel || 0,
-                communicationTime: di.communicationTime || 0,
+                type: num(di.type),
+                dtuStepTime: num(di.dtuStepTime),
+                dtuRfHwVersion: num(di.dtuRfHwVersion),
+                dtuRfSwVersion: num(di.dtuRfSwVersion),
+                accessModel: num(di.accessModel),
+                communicationTime: num(di.communicationTime),
                 wifiVersion: di.wifiVersion || "",
-                dtu485Mode: di.dtu485Mode || 0,
-                sub1gFrequencyBand: di.sub1gFrequencyBand || 0,
+                dtu485Mode: num(di.dtu485Mode),
+                sub1gFrequencyBand: num(di.sub1gFrequencyBand),
             };
         }
-        if (obj.pvInfo) {
-            for (const pv of obj.pvInfo) {
-                result.pvInfo.push({
-                    kind: pv.pvKind || 0,
-                    sn: (Number(pv.pvSn) || 0).toString(16).toUpperCase(),
-                    hwVersion: pv.pvHwVersion || 0,
-                    swVersion: pv.pvSwVersion || 0,
-                    gridVersion: pv.pvGridVersion || 0,
-                    bootVersion: pv.pvBootVersion || 0,
-                });
-            }
+        for (const pv of arr(obj.pvInfo)) {
+            result.pvInfo.push({
+                kind: num(pv.pvKind),
+                sn: serialToHex(pv.pvSn),
+                hwVersion: num(pv.pvHwVersion),
+                swVersion: num(pv.pvSwVersion),
+                gridVersion: num(pv.pvGridVersion),
+                bootVersion: num(pv.pvBootVersion),
+            });
         }
         return result;
     }
-    /**
-     * Decode a GetConfig response payload.
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded config result
-     */
     decodeGetConfig(payload) {
-        const ReqDTO = this.protos.GetConfig.lookupType("GetConfigReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
-        const ipAddr = [obj.ipAddr_0, obj.ipAddr_1, obj.ipAddr_2, obj.ipAddr_3].map(v => v || 0).join(".");
-        const subnetMask = [obj.subnetMask_0, obj.subnetMask_1, obj.subnetMask_2, obj.subnetMask_3]
-            .map(v => v || 0)
-            .join(".");
-        const gateway = [obj.defaultGateway_0, obj.defaultGateway_1, obj.defaultGateway_2, obj.defaultGateway_3]
-            .map(v => v || 0)
-            .join(".");
-        const wifiIp = [obj.wifiIpAddr_0, obj.wifiIpAddr_1, obj.wifiIpAddr_2, obj.wifiIpAddr_3]
-            .map(v => v || 0)
-            .join(".");
-        const mac = [obj.mac_0, obj.mac_1, obj.mac_2, obj.mac_3, obj.mac_4, obj.mac_5]
-            .map(v => (v || 0).toString(16).padStart(2, "0").toUpperCase())
-            .join(":");
-        const wifiMac = [obj.wifiMac_0, obj.wifiMac_1, obj.wifiMac_2, obj.wifiMac_3, obj.wifiMac_4, obj.wifiMac_5]
-            .map(v => (v || 0).toString(16).padStart(2, "0").toUpperCase())
-            .join(":");
+        const obj = this.decodePayload("GetConfig", "GetConfigReqDTO", payload);
+        const ipAddr = formatIpv4(obj.ipAddr_0, obj.ipAddr_1, obj.ipAddr_2, obj.ipAddr_3);
+        const subnetMask = formatIpv4(obj.subnetMask_0, obj.subnetMask_1, obj.subnetMask_2, obj.subnetMask_3);
+        const gateway = formatIpv4(obj.defaultGateway_0, obj.defaultGateway_1, obj.defaultGateway_2, obj.defaultGateway_3);
+        const wifiIp = formatIpv4(obj.wifiIpAddr_0, obj.wifiIpAddr_1, obj.wifiIpAddr_2, obj.wifiIpAddr_3);
+        const mac = formatMac(obj.mac_0, obj.mac_1, obj.mac_2, obj.mac_3, obj.mac_4, obj.mac_5);
+        const wifiMac = formatMac(obj.wifiMac_0, obj.wifiMac_1, obj.wifiMac_2, obj.wifiMac_3, obj.wifiMac_4, obj.wifiMac_5);
         return {
-            limitPower: obj.limitPowerMypower || 0,
-            zeroExportEnable: obj.zeroExportEnable || 0,
-            zeroExport433Addr: obj.zeroExport_433Addr || 0,
+            limitPower: num(obj.limitPowerMypower),
+            zeroExportEnable: num(obj.zeroExportEnable),
+            zeroExport433Addr: num(obj.zeroExport_433Addr),
             meterKind: obj.meterKind || "",
             meterInterface: obj.meterInterface || "",
-            serverSendTime: obj.serverSendTime || 0,
-            wifiRssi: obj.wifiRssi || 0,
-            serverPort: obj.serverport || 0,
+            serverSendTime: num(obj.serverSendTime),
+            wifiRssi: num(obj.wifiRssi),
+            serverPort: num(obj.serverport),
             serverDomain: obj.serverDomainName || "",
             wifiSsid: obj.wifiSsid || "",
             dtuSn: obj.dtuSn || "",
-            dhcpSwitch: obj.dhcpSwitch || 0,
-            invType: obj.invType || 0,
-            netmodeSelect: obj.netmodeSelect || 0,
-            channelSelect: obj.channelSelect || 0,
-            sub1gSweepSwitch: obj.sub1gSweepSwitch || 0,
-            sub1gWorkChannel: obj.sub1gWorkChannel || 0,
+            dhcpSwitch: num(obj.dhcpSwitch),
+            invType: num(obj.invType),
+            netmodeSelect: num(obj.netmodeSelect),
+            channelSelect: num(obj.channelSelect),
+            sub1gSweepSwitch: num(obj.sub1gSweepSwitch),
+            sub1gWorkChannel: num(obj.sub1gWorkChannel),
             dtuApSsid: obj.dtuApSsid || "",
             ipAddress: ipAddr,
             subnetMask: subnetMask,
@@ -805,123 +460,85 @@ class ProtobufHandler {
             wifiMacAddress: wifiMac,
         };
     }
-    /**
-     * Decode an AlarmData response payload.
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded alarm data result
-     */
     decodeAlarmData(payload) {
-        const ReqDTO = this.protos.AlarmData.lookupType("WInfoReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
+        const obj = this.decodePayload("AlarmData", "WInfoReqDTO", payload);
         const alarms = [];
-        if (obj.mWInfo) {
-            for (const w of obj.mWInfo) {
-                alarms.push({
-                    sn: (Number(w.pvSn) || 0).toString(16).toUpperCase(),
-                    code: w.WCode || 0,
-                    num: w.WNum || 0,
-                    startTime: w.WTime1 || 0,
-                    endTime: w.WTime2 || 0,
-                    data1: w.WData1 || 0,
-                    data2: w.WData2 || 0,
-                });
-            }
+        for (const w of arr(obj.mWInfo)) {
+            alarms.push({
+                sn: serialToHex(w.pvSn),
+                code: num(w.WCode),
+                num: num(w.WNum),
+                startTime: num(w.WTime1),
+                endTime: num(w.WTime2),
+                data1: num(w.WData1),
+                data2: num(w.WData2),
+            });
         }
         return {
             dtuSn: obj.dtuSn || "",
-            timestamp: obj.time || 0,
+            timestamp: num(obj.time),
             alarms,
         };
     }
-    /**
-     * Decode a historical power data response payload.
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded historical power result
-     */
     decodeHistPower(payload) {
-        const ReqDTO = this.protos.AppGetHistPower.lookupType("AppGetHistPowerReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
+        const obj = this.decodePayload("AppGetHistPower", "AppGetHistPowerReqDTO", payload);
         return {
-            serialNumber: (Number(obj.serialNumber) || 0).toString(16).toUpperCase(),
+            serialNumber: serialToHex(obj.serialNumber),
             powerArray: obj.powerArray || [],
-            totalEnergy: obj.totalEnergy || 0,
-            dailyEnergy: obj.dailyEnergy || 0,
-            stepTime: obj.stepTime || 0,
-            startTime: obj.startTime || 0,
-            relativePower: obj.relativePower || 0,
-            warningNumber: obj.warningNumber || 0,
+            totalEnergy: num(obj.totalEnergy),
+            dailyEnergy: num(obj.dailyEnergy),
+            stepTime: num(obj.stepTime),
+            startTime: num(obj.startTime),
+            relativePower: num(obj.relativePower),
+            warningNumber: num(obj.warningNumber),
         };
     }
-    /**
-     * Decode a WarnData response payload (newer warning format).
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded warning data result with alarm descriptions
-     */
     decodeWarnData(payload) {
-        const ReqDTO = this.protos.WarnData.lookupType("WarnReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
+        const obj = this.decodePayload("WarnData", "WarnReqDTO", payload);
         const warnings = [];
-        if (obj.warns) {
-            for (const w of obj.warns) {
-                const code = w.code || 0;
-                warnings.push({
-                    sn: (Number(w.pvSn) || 0).toString(16).toUpperCase(),
-                    code,
-                    num: w.num || 0,
-                    startTime: w.sTime || 0,
-                    endTime: w.eTime || 0,
-                    data1: w.wData1 || 0,
-                    data2: w.wData2 || 0,
-                    descriptionEn: (0, alarmCodes_1.getAlarmDescription)(code, "en"),
-                    descriptionDe: (0, alarmCodes_1.getAlarmDescription)(code, "de"),
-                });
-            }
+        for (const w of arr(obj.warns)) {
+            const code = num(w.code);
+            warnings.push({
+                sn: serialToHex(w.pvSn),
+                code,
+                num: num(w.num),
+                startTime: num(w.sTime),
+                endTime: num(w.eTime),
+                data1: num(w.wData1),
+                data2: num(w.wData2),
+                descriptionEn: getAlarmDescription(code, "en"),
+                descriptionDe: getAlarmDescription(code, "de"),
+            });
         }
         return {
             dtuSn: obj.dtuSn || "",
-            timestamp: obj.time || 0,
+            timestamp: num(obj.time),
             warnings,
         };
     }
-    /**
-     * Decode an EventData response payload.
-     *
-     * @param payload - The protobuf payload buffer
-     * @returns Decoded event data result
-     */
     decodeEventData(payload) {
-        const ReqDTO = this.protos.EventData.lookupType("EventDataReqDTO");
-        const msg = ReqDTO.decode(payload);
-        const obj = ReqDTO.toObject(msg, { longs: Number, defaults: true });
+        const obj = this.decodePayload("EventData", "EventDataReqDTO", payload);
         const events = [];
-        if (obj.miEvents) {
-            for (const e of obj.miEvents) {
-                events.push({
-                    eventCode: e.eventCode || 0,
-                    eventStatus: e.eventStatus || 0,
-                    eventCount: e.eventCount || 0,
-                    pvVoltage: (e.pvVoltage || 0) / 10,
-                    gridVoltage: (e.gridVoltage || 0) / 10,
-                    gridFrequency: (e.gridFrequency || 0) / 100,
-                    gridPower: e.gridPower || 0,
-                    temperature: (e.temperature || 0) / 10,
-                    miId: `${Number(e.miId) || 0}`,
-                    startTimestamp: e.startTimestamp || 0,
-                });
-            }
+        for (const e of arr(obj.miEvents)) {
+            events.push({
+                eventCode: num(e.eventCode),
+                eventStatus: num(e.eventStatus),
+                eventCount: num(e.eventCount),
+                pvVoltage: scaled(e.pvVoltage, SCALE_VOLTAGE),
+                gridVoltage: scaled(e.gridVoltage, SCALE_VOLTAGE),
+                gridFrequency: scaled(e.gridFrequency, SCALE_FREQUENCY),
+                gridPower: num(e.gridPower),
+                temperature: scaled(e.temperature, SCALE_TEMPERATURE),
+                miId: `${num(e.miId)}`,
+                startTimestamp: num(e.startTimestamp),
+            });
         }
         return {
-            offset: obj.offset || 0,
-            timestamp: obj.time || 0,
+            offset: num(obj.offset),
+            timestamp: num(obj.time),
             events,
         };
     }
 }
-exports.ProtobufHandler = ProtobufHandler;
+export { ProtobufHandler, CMD, ACTION, HEADER_SIZE };
 //# sourceMappingURL=protobufHandler.js.map

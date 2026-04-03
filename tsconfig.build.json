@@ -2,7 +2,10 @@
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
 		"noEmit": false,
-		"declaration": false
+		"declaration": false,
+		"removeComments": true,
+		"skipLibCheck": true,
+		"sourceMap": true
 	},
 	"include": ["src/**/*.ts"],
 	"exclude": ["src/**/*.test.ts"]

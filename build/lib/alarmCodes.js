@@ -1,17 +1,3 @@
-"use strict";
-/**
- * Hoymiles Microinverter Alarm/Warning Codes
- *
- * Source: S-Miles Enduser APK - assets/warn_code.json
- * These codes are used across HM, HMS, and HMT series microinverters.
- * The WCode field in the AlarmData protobuf message maps to these codes.
- *
- * German translations provided where the Chinese source text clarifies
- * the technical meaning beyond what the English translation conveys.
- */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ALARM_CODES = void 0;
-exports.getAlarmDescription = getAlarmDescription;
 const ALARM_CODES = {
     1: {
         en: "Reset",
@@ -52,6 +38,10 @@ const ALARM_CODES = {
     36: {
         en: "INV overvoltage or overcurrent",
         de: "Wechselrichter Überspannung oder Überstrom",
+    },
+    38: {
+        en: "Insufficient input power (shutting down)",
+        de: "Eingangsleistung zu gering (Abschaltung)",
     },
     46: {
         en: "FB overvoltage",
@@ -450,20 +440,13 @@ const ALARM_CODES = {
         de: "Mikrowechselrichter steht unter Diebstahlverdacht",
     },
 };
-exports.ALARM_CODES = ALARM_CODES;
-/**
- * Get the alarm description for a given code
- *
- * @param code - The alarm/warning code
- * @param lang - Language code ("en" or "de")
- * @returns The alarm description, or "Unknown alarm code: {code}" if not found
- */
 function getAlarmDescription(code, lang) {
     lang = lang || "en";
     const entry = ALARM_CODES[code];
     if (!entry) {
-        return `Unknown alarm code: ${code}`;
+        return `Unknown code: ${code}`;
     }
     return entry[lang] || entry.en;
 }
+export { ALARM_CODES, getAlarmDescription };
 //# sourceMappingURL=alarmCodes.js.map

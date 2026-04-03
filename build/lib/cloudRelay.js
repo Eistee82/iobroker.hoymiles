@@ -1,221 +1,207 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-const net = __importStar(require("node:net"));
-const node_events_1 = require("node:events");
-const RECONNECT_DELAY = 10000;
-const HEARTBEAT_INTERVAL = 60000; // 60s heartbeat (PCAP: DTU sends HB every 60s)
-const REALDATA_INTERVAL = 300000; // 5 min RealData (matches DTU default sendTime=5min)
-// Cloud protocol uses 0x22/0x23 prefix (different from local 0xa2/0xa3!)
-const CLOUD_CMD_HEARTBEAT = [0x22, 0x02]; // HBReqDTO
-const CLOUD_CMD_REALDATA = [0x22, 0x0c]; // RealDataReqDTO
-/**
- * Cloud Relay: Sends DTU data to the Hoymiles cloud server.
- * Uses the cloud protocol (0x22/0x23 tags) instead of local protocol (0xa2/0xa3).
- * Emulates the DTU's cloud connection: periodic heartbeats + RealData forwarding.
- */
-class CloudRelay extends node_events_1.EventEmitter {
-    connected;
-    host;
-    port;
-    socket;
-    destroyed;
-    reconnectTimer;
+import TcpConnection from "./tcpConnection.js";
+import { clearTimer, unixSeconds } from "./utils.js";
+import { CLOUD_RECONNECT_DELAY_MIN_MS, CLOUD_RECONNECT_DELAY_MAX_MS, CLOUD_HEARTBEAT_INTERVAL_MS, CLOUD_SOCKET_TIMEOUT_MS, CLOUD_DEFAULT_REALDATA_INTERVAL_MS, CLOUD_MIN_REALDATA_INTERVAL_MS, } from "./constants.js";
+const CLOUD_CMD_HEARTBEAT = [0x22, 0x02];
+const CLOUD_CMD_REALDATA = [0x22, 0x0c];
+const CLOUD_CMD_REALDATA_STATUS = [0x22, 0x0d];
+class CloudRelay extends TcpConnection {
+    paused;
     heartbeatTimer;
     realDataTimer;
+    pauseTimer;
     protobuf;
     dtuSn;
     timezoneOffset;
     lastRealDataPayload;
+    lastRealDataTimestamp;
+    seq;
+    realDataIntervalMs;
     constructor(host, port) {
-        super();
-        this.host = host;
-        this.port = port;
-        this.socket = null;
-        this.connected = false;
-        this.destroyed = false;
-        this.reconnectTimer = null;
+        super(host, port, CLOUD_RECONNECT_DELAY_MIN_MS, CLOUD_RECONNECT_DELAY_MAX_MS);
+        this.paused = false;
         this.heartbeatTimer = null;
         this.realDataTimer = null;
+        this.pauseTimer = null;
         this.protobuf = null;
         this.dtuSn = "";
-        this.timezoneOffset = 3600;
+        this.timezoneOffset = -new Date().getTimezoneOffset() * 60;
         this.lastRealDataPayload = null;
+        this.lastRealDataTimestamp = 0;
+        this.seq = 0;
+        this.realDataIntervalMs = CLOUD_DEFAULT_REALDATA_INTERVAL_MS;
     }
-    /**
-     * Configure the relay with DTU info needed for cloud messages.
-     *
-     * @param protobuf - ProtobufHandler instance for encoding messages
-     * @param dtuSn - DTU serial number for cloud identification
-     * @param timezoneOffset - Timezone offset in seconds (default 3600)
-     */
     configure(protobuf, dtuSn, timezoneOffset) {
+        if (!dtuSn) {
+            throw new Error("CloudRelay.configure: dtuSn is required");
+        }
         this.protobuf = protobuf;
         this.dtuSn = dtuSn;
         if (timezoneOffset !== undefined) {
             this.timezoneOffset = timezoneOffset;
         }
     }
-    /**
-     * Store the latest RealData protobuf payload from local DTU response.
-     *
-     * @param rawLocalMessage - Raw HM-framed message from local DTU connection
-     */
-    updateRealData(rawLocalMessage) {
-        // Store the raw local RealData response — we'll re-frame it for cloud
-        if (rawLocalMessage.length > 10) {
-            this.lastRealDataPayload = Buffer.from(rawLocalMessage.subarray(10)); // Strip HM header
+    setRealDataInterval(minutes) {
+        if (minutes <= 0) {
+            return;
+        }
+        const newInterval = Math.max(minutes * 60 * 1000, CLOUD_MIN_REALDATA_INTERVAL_MS);
+        if (newInterval === this.realDataIntervalMs) {
+            return;
+        }
+        this.realDataIntervalMs = newInterval;
+        if (this.connected && !this.paused && !this.destroyed) {
+            this._stopSessionTimers();
+            this._startTimers();
         }
     }
-    connect() {
+    updateRealData(rawLocalMessage) {
+        if (rawLocalMessage.length > 10) {
+            this.lastRealDataPayload = Buffer.from(rawLocalMessage.subarray(10));
+            this.lastRealDataTimestamp = Date.now();
+        }
+    }
+    sendFinalAndPause() {
+        this.paused = true;
+        this._stopSessionTimers();
         if (this.destroyed) {
             return;
         }
-        if (this.socket) {
-            this.socket.destroy();
-            this.socket = null;
+        try {
+            this._sendRealData();
         }
-        this.socket = new net.Socket();
-        this.socket.setKeepAlive(true);
-        this.socket.connect(this.port, this.host, () => {
-            this.connected = true;
-            this.emit("connected");
+        catch (err) {
+            this.emit("error", new Error(`CloudRelay final send failed: ${err.message}`));
+        }
+        this.pauseTimer = clearTimer(this.pauseTimer);
+        this.pauseTimer = setTimeout(() => {
+            this.pauseTimer = null;
+            if (this.destroyed) {
+                return;
+            }
+            if (this.paused && this.socket) {
+                this.socket.removeAllListeners();
+                this.socket.on("error", () => { });
+                this.socket.destroy();
+                this.socket = null;
+                this._handleDisconnect(null);
+            }
+        }, 2000);
+    }
+    resume() {
+        this.paused = false;
+        this.pauseTimer = clearTimer(this.pauseTimer);
+        if (!this.connected && !this.destroyed) {
+            this.connect();
+        }
+        else if (this.connected) {
             this._sendHeartbeat();
             this._startTimers();
-        });
-        this.socket.on("data", () => {
-            // Cloud responses — acknowledged, no processing needed
-        });
-        this.socket.on("error", (err) => {
-            this.emit("error", err);
-            this._handleDisconnect();
-        });
-        this.socket.on("close", () => {
-            this._handleDisconnect();
-        });
-    }
-    disconnect() {
-        this.destroyed = true;
-        this._stopTimers();
-        if (this.socket) {
-            this.socket.destroy();
-            this.socket = null;
         }
-        this.connected = false;
     }
-    /** Build and send a cloud heartbeat (HBReqDTO, tag 0x22 0x02). */
+    _configureSocket(socket) {
+        socket.setKeepAlive(true, CLOUD_HEARTBEAT_INTERVAL_MS);
+        socket.setTimeout(CLOUD_SOCKET_TIMEOUT_MS);
+        socket.on("data", (data) => {
+            this.emit("dataReceived", data.length);
+        });
+        socket.on("timeout", () => {
+            this.emit("error", new Error("Socket timeout — no heartbeat response received"));
+            socket.destroy();
+        });
+    }
+    _onConnected() {
+        this.emit("connected");
+        this._sendHeartbeat();
+        if (this.lastRealDataPayload) {
+            this._sendRealData();
+        }
+        if (!this.paused) {
+            this._startTimers();
+        }
+    }
+    _stopSessionTimers() {
+        this.heartbeatTimer = clearTimer(this.heartbeatTimer);
+        this.realDataTimer = clearTimer(this.realDataTimer);
+    }
+    _stopAllTimers() {
+        super._stopAllTimers();
+        this.pauseTimer = clearTimer(this.pauseTimer);
+    }
+    _shouldReconnect() {
+        return !this.paused;
+    }
     _sendHeartbeat() {
         if (!this.connected || !this.socket || !this.protobuf) {
             return;
         }
-        const HBReqDTO = this.protobuf.protos.APPHeartbeatPB.lookupType("HBReqDTO");
+        const HBReqDTO = this.protobuf.getType("APPHeartbeatPB", "HBReqDTO");
         const msg = HBReqDTO.create({
             offset: this.timezoneOffset,
-            time: Math.floor(Date.now() / 1000),
-            csq: -69, // Signal quality placeholder
+            time: unixSeconds(),
+            csq: -69,
             dtuSerialNumber: this.dtuSn,
+            unknownField6: 550,
         });
         const payload = HBReqDTO.encode(msg).finish();
         const frame = this._buildCloudMessage(CLOUD_CMD_HEARTBEAT[0], CLOUD_CMD_HEARTBEAT[1], payload);
-        this.socket.write(frame);
+        this._safeWrite(frame);
+        this.emit("heartbeatSent", this.seq);
     }
-    /** Build and send RealData to cloud (tag 0x22 0x0c). */
+    _sendRealDataStatus() {
+        if (!this.connected || !this.socket || !this.lastRealDataPayload) {
+            return;
+        }
+        const frame = this._buildCloudMessage(CLOUD_CMD_REALDATA_STATUS[0], CLOUD_CMD_REALDATA_STATUS[1], this.lastRealDataPayload);
+        this._safeWrite(frame);
+    }
     _sendRealData() {
         if (!this.connected || !this.socket || !this.lastRealDataPayload) {
             return;
         }
-        // Forward the raw protobuf payload with cloud framing
+        if (Date.now() - this.lastRealDataTimestamp > this.realDataIntervalMs * 2) {
+            return;
+        }
         const frame = this._buildCloudMessage(CLOUD_CMD_REALDATA[0], CLOUD_CMD_REALDATA[1], this.lastRealDataPayload);
-        this.socket.write(frame);
+        this._safeWrite(frame);
+        this.emit("dataSent");
     }
-    /**
-     * Build HM-framed message with cloud tags and sequence numbers.
-     *
-     * @param cmdHigh - High byte of cloud command tag
-     * @param cmdLow - Low byte of cloud command tag
-     * @param protobufPayload - Encoded protobuf data
-     */
     _buildCloudMessage(cmdHigh, cmdLow, protobufPayload) {
         if (!this.protobuf) {
             throw new Error("Protobuf not configured");
         }
-        // Use protobufHandler's buildMessage which handles seq + CRC
-        return this.protobuf.buildMessage(cmdHigh, cmdLow, protobufPayload);
+        const seq = this.seq;
+        this.seq = seq >= 60000 ? 0 : seq + 1;
+        return this.protobuf.buildMessage(cmdHigh, cmdLow, protobufPayload, seq);
     }
-    _startTimers() {
-        this._stopTimers();
-        // Heartbeat every ~55s
-        this.heartbeatTimer = setInterval(() => this._sendHeartbeat(), HEARTBEAT_INTERVAL);
-        // Forward latest RealData every ~5 min
-        this.realDataTimer = setInterval(() => this._sendRealData(), REALDATA_INTERVAL);
-    }
-    _handleDisconnect() {
-        const wasConnected = this.connected;
-        this.connected = false;
-        this._stopTimers();
-        if (this.destroyed) {
-            if (wasConnected) {
-                this.emit("disconnected");
-            }
+    _safeWrite(data) {
+        if (!this.socket) {
             return;
         }
-        if (wasConnected) {
-            this.emit("disconnected");
-        }
-        if (!this.reconnectTimer) {
-            this.reconnectTimer = setTimeout(() => {
-                this.reconnectTimer = null;
-                if (!this.destroyed) {
-                    this.connect();
-                }
-            }, RECONNECT_DELAY);
-        }
+        this.socket.write(data, err => {
+            if (err) {
+                this.emit("error", new Error(`CloudRelay write failed: ${err.message}`));
+            }
+        });
     }
-    _stopTimers() {
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-            this.heartbeatTimer = null;
+    _startTimers() {
+        this._stopSessionTimers();
+        if (this.paused || this.destroyed) {
+            return;
         }
-        if (this.realDataTimer) {
-            clearInterval(this.realDataTimer);
-            this.realDataTimer = null;
-        }
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
+        this.heartbeatTimer = setInterval(() => {
+            if (this.destroyed || this.paused) {
+                return;
+            }
+            this._sendRealDataStatus();
+            this._sendHeartbeat();
+        }, CLOUD_HEARTBEAT_INTERVAL_MS);
+        this.realDataTimer = setInterval(() => {
+            if (this.destroyed || this.paused) {
+                return;
+            }
+            this._sendRealData();
+        }, this.realDataIntervalMs);
     }
 }
-module.exports = CloudRelay;
+export default CloudRelay;
 //# sourceMappingURL=cloudRelay.js.map

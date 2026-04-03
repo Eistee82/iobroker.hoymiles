@@ -28,8 +28,18 @@
             "uk": "Моніторинг інверторів Hoymiles HMS через локальний TCP/Protobuf та/або хмарний API S-Miles",
             "zh-cn": "通过本地TCP/Protobuf和/或S-Miles云API监控Hoymiles HMS逆变器"
         },
-        "authors": ["Eistee"],
-        "keywords": ["solar", "hoymiles", "inverter", "photovoltaic", "HMS", "dtu", "energy"],
+        "authors": [
+            "Eistee"
+        ],
+        "keywords": [
+            "solar",
+            "hoymiles",
+            "inverter",
+            "photovoltaic",
+            "HMS",
+            "dtu",
+            "energy"
+        ],
         "licenseInformation": {
             "license": "MIT",
             "type": "free"
@@ -46,10 +56,14 @@
             "config": "json"
         },
         "dependencies": [
-            { "js-controller": ">=6.0.11" }
+            {
+                "js-controller": ">=6.0.11"
+            }
         ],
         "globalDependencies": [
-            { "admin": ">=7.6.20" }
+            {
+                "admin": ">=7.6.20"
+            }
         ],
         "enabled": true,
         "news": {
@@ -72,11 +86,11 @@
         "readme": "https://github.com/Eistee82/ioBroker.hoymiles/blob/main/README.md",
         "loglevel": "info",
         "stopBeforeUpdate": true,
-        "stopTimeout": 500
+        "stopTimeout": 6000
     },
     "native": {
         "enableLocal": true,
-        "host": "",
+        "devices": [],
         "dataInterval": 5,
         "slowPollFactor": 6,
         "enableCloudRelay": true,
@@ -84,20 +98,39 @@
         "cloudUser": "",
         "cloudPassword": ""
     },
-    "encryptedNative": ["cloudPassword"],
-    "protectedNative": ["cloudPassword"],
+    "encryptedNative": [
+        "cloudPassword"
+    ],
+    "protectedNative": [
+        "cloudPassword"
+    ],
     "instanceObjects": [
         {
             "_id": "info",
             "type": "channel",
-            "common": { "name": "Device information" },
+            "common": {
+                "name": "Device information"
+            },
             "native": {}
         },
         {
             "_id": "info.connection",
             "type": "state",
             "common": {
-                "name": "DTU connected",
+                "name": "Connected (local or cloud)",
+                "role": "indicator.connected",
+                "type": "boolean",
+                "read": true,
+                "write": false,
+                "def": false
+            },
+            "native": {}
+        },
+        {
+            "_id": "info.cloudConnected",
+            "type": "state",
+            "common": {
+                "name": "Cloud connected",
                 "role": "indicator.connected",
                 "type": "boolean",
                 "read": true,
