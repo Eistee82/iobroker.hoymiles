@@ -1,7 +1,7 @@
 {
     "common": {
         "name": "hoymiles",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "titleLang": {
             "en": "Hoymiles HMS-xxxW-xT",
             "de": "Hoymiles HMS-xxxW-xT",
@@ -67,6 +67,19 @@
         ],
         "enabled": true,
         "news": {
+            "0.3.1": {
+                "en": "Fix admin UI responsive layout, fix news translations for repochecker",
+                "de": "Admin-UI responsive Layout repariert, News-Übersetzungen für Repochecker korrigiert",
+                "ru": "Исправлена адаптивная разметка интерфейса администратора, исправлены переводы новостей",
+                "pt": "Correção do layout responsivo da UI admin, correção de traduções de notícias",
+                "nl": "Admin UI responsieve layout gerepareerd, nieuwsvertalingen gecorrigeerd",
+                "fr": "Correction du layout responsive de l'interface admin, correction des traductions des actualités",
+                "it": "Corretto il layout responsive dell'interfaccia admin, corrette le traduzioni delle news",
+                "es": "Corrección del diseño responsivo de la UI admin, corrección de traducciones de noticias",
+                "pl": "Naprawiono responsywny układ interfejsu administracyjnego, poprawiono tłumaczenia wiadomości",
+                "uk": "Виправлено адаптивний макет інтерфейсу адміністратора, виправлено переклади новин",
+                "zh-cn": "修复管理界面响应式布局，修复新闻翻译"
+            },
             "0.3.0": {
                 "en": "Multi-inverter support, cloud auto-discovery, station-level aggregated data, per-inverter cloud data",
                 "de": "Multi-Wechselrichter-Unterstützung, Cloud-Auto-Erkennung, Stationsebene aggregierte Daten, Cloud-Daten pro Wechselrichter",
@@ -79,19 +92,6 @@
                 "pl": "Obsługa wielu falowników, automatyczne wykrywanie w chmurze, zagregowane dane na poziomie stacji",
                 "uk": "Підтримка кількох інверторів, автоматичне виявлення хмари, агреговані дані на рівні станції",
                 "zh-cn": "多逆变器支持，云端自动发现，站级聚合数据，每台逆变器云端数据"
-            },
-            "0.2.0": {
-                "en": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "de": "Protokoll-Rewrite mit Cloud-Relay — schnelle lokale Daten + Cloud-Upload gleichzeitig",
-                "ru": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "pt": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "nl": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "fr": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "it": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "es": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "pl": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "uk": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously",
-                "zh-cn": "Protocol rewrite with Cloud Relay — fast local data + cloud upload simultaneously"
             }
         },
         "extIcon": "https://raw.githubusercontent.com/Eistee82/ioBroker.hoymiles/main/admin/hoymiles.png",

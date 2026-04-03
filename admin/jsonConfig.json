@@ -12,6 +12,10 @@
             "type": "checkbox",
             "label": "enableLocal",
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "default": true,
             "help": "enableLocalHelp"
         },
@@ -26,9 +30,11 @@
             "useNative": true,
             "showProcess": true,
             "disabled": "!data.enableLocal",
-            "xs": 6,
+            "xs": 12,
             "sm": 4,
-            "md": 3
+            "md": 3,
+            "lg": 3,
+            "xl": 3
         },
         "_testConnection": {
             "type": "sendTo",
@@ -41,9 +47,11 @@
             "useNative": true,
             "showProcess": true,
             "disabled": "!data.enableLocal",
-            "xs": 6,
+            "xs": 12,
             "sm": 4,
-            "md": 3
+            "md": 3,
+            "lg": 3,
+            "xl": 3
         },
         "devices": {
             "type": "table",
@@ -51,6 +59,10 @@
             "ordered": false,
             "disabled": "!data.enableLocal",
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "items": [
                 {
                     "type": "checkbox",
@@ -101,6 +113,8 @@
             "xs": 12,
             "sm": 6,
             "md": 4,
+            "lg": 4,
+            "xl": 4,
             "disabled": "!data.enableLocal",
             "help": "dataIntervalHelp"
         },
@@ -113,6 +127,8 @@
             "xs": 12,
             "sm": 6,
             "md": 4,
+            "lg": 4,
+            "xl": 4,
             "disabled": "!data.enableLocal",
             "help": "slowPollFactorHelp"
         },
@@ -121,7 +137,10 @@
             "label": "enableCloudRelay",
             "default": true,
             "xs": 12,
+            "sm": 12,
             "md": 4,
+            "lg": 4,
+            "xl": 4,
             "disabled": "!data.enableLocal",
             "help": "enableCloudRelayHelp"
         },
@@ -151,6 +170,10 @@
             "label": "enableCloud",
             "default": false,
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "help": "enableCloudHelp"
         },
         "cloudUser": {
@@ -159,6 +182,9 @@
             "placeholder": "email@example.com",
             "xs": 12,
             "sm": 6,
+            "md": 6,
+            "lg": 6,
+            "xl": 6,
             "disabled": "!data.enableCloud",
             "validator": "!data.enableCloud || data.cloudUser !== ''",
             "validatorErrorText": "cloudUserRequired"
@@ -168,6 +194,9 @@
             "label": "cloudPassword",
             "xs": 12,
             "sm": 6,
+            "md": 6,
+            "lg": 6,
+            "xl": 6,
             "disabled": "!data.enableCloud",
             "validator": "!data.enableCloud || data.cloudPassword !== ''",
             "validatorErrorText": "cloudPasswordRequired"
