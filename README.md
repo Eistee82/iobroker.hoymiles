@@ -134,6 +134,10 @@ Each DTU creates a device node using its serial number as ID (e.g. `hoymiles.0.4
 Cloud stations create aggregated device nodes (e.g. `hoymiles.0.station-12345.*`).
 
 ## Changelog
+### 0.3.1 (2026-04-03)
+- (@Eistee82) Fix admin UI responsive layout (add missing size attributes for repochecker)
+- (@Eistee82) Fix news translations in io-package.json for repochecker E2004
+
 ### 0.3.0 (2026-04-03)
 - (@Eistee82) Multi-inverter support: multiple DTUs in a single adapter instance
 - (@Eistee82) Cloud auto-discovery: all inverters and stations in the account are automatically detected

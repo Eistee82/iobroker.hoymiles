@@ -6,12 +6,20 @@
             "type": "header",
             "text": "tabLocal",
             "size": 4,
-            "xs": 12
+            "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12
         },
         "enableLocal": {
             "type": "checkbox",
             "label": "enableLocal",
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "default": true,
             "help": "enableLocalHelp"
         },
@@ -26,9 +34,11 @@
             "useNative": true,
             "showProcess": true,
             "disabled": "!data.enableLocal",
-            "xs": 6,
+            "xs": 12,
             "sm": 4,
-            "md": 3
+            "md": 3,
+            "lg": 3,
+            "xl": 3
         },
         "_testConnection": {
             "type": "sendTo",
@@ -41,9 +51,11 @@
             "useNative": true,
             "showProcess": true,
             "disabled": "!data.enableLocal",
-            "xs": 6,
+            "xs": 12,
             "sm": 4,
-            "md": 3
+            "md": 3,
+            "lg": 3,
+            "xl": 3
         },
         "devices": {
             "type": "table",
@@ -51,6 +63,10 @@
             "ordered": false,
             "disabled": "!data.enableLocal",
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "items": [
                 {
                     "type": "checkbox",
@@ -101,6 +117,8 @@
             "xs": 12,
             "sm": 6,
             "md": 4,
+            "lg": 4,
+            "xl": 4,
             "disabled": "!data.enableLocal",
             "help": "dataIntervalHelp"
         },
@@ -113,6 +131,8 @@
             "xs": 12,
             "sm": 6,
             "md": 4,
+            "lg": 4,
+            "xl": 4,
             "disabled": "!data.enableLocal",
             "help": "slowPollFactorHelp"
         },
@@ -121,7 +141,10 @@
             "label": "enableCloudRelay",
             "default": true,
             "xs": 12,
+            "sm": 12,
             "md": 4,
+            "lg": 4,
+            "xl": 4,
             "disabled": "!data.enableLocal",
             "help": "enableCloudRelayHelp"
         },
@@ -129,6 +152,10 @@
             "type": "staticText",
             "text": "cloudRelayWarning",
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "hidden": "!data.enableLocal || data.enableCloudRelay",
             "style": {
                 "fontSize": 13,
@@ -138,19 +165,31 @@
         },
         "_divider": {
             "type": "divider",
-            "xs": 12
+            "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12
         },
         "_headerCloud": {
             "type": "header",
             "text": "tabCloud",
             "size": 4,
-            "xs": 12
+            "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12
         },
         "enableCloud": {
             "type": "checkbox",
             "label": "enableCloud",
             "default": false,
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "help": "enableCloudHelp"
         },
         "cloudUser": {
@@ -159,6 +198,9 @@
             "placeholder": "email@example.com",
             "xs": 12,
             "sm": 6,
+            "md": 6,
+            "lg": 6,
+            "xl": 6,
             "disabled": "!data.enableCloud",
             "validator": "!data.enableCloud || data.cloudUser !== ''",
             "validatorErrorText": "cloudUserRequired"
@@ -168,6 +210,9 @@
             "label": "cloudPassword",
             "xs": 12,
             "sm": 6,
+            "md": 6,
+            "lg": 6,
+            "xl": 6,
             "disabled": "!data.enableCloud",
             "validator": "!data.enableCloud || data.cloudPassword !== ''",
             "validatorErrorText": "cloudPasswordRequired"
@@ -176,6 +221,10 @@
             "type": "staticText",
             "text": "cloudInfo",
             "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12,
             "style": {
                 "fontSize": 12,
                 "opacity": 0.7,
