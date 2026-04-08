@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "hoymiles",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "titleLang": {
       "en": "Hoymiles HMS-xxxW-xT",
       "de": "Hoymiles HMS-xxxW-xT",
@@ -67,6 +67,19 @@
     ],
     "enabled": true,
     "news": {
+      "0.3.4": {
+        "en": "Fix disabled property type in jsonConfig table items (string, not boolean)\nAdd local repochecker script (`npm run test:repo`)",
+        "de": "Beheben Sie den Typ der Behindertenimmobilien in jsonConfig-Tabellen (String, nicht boolean)\nLokales Repochecker-Skript hinzufügen (`npm Run Test:repo`)",
+        "ru": "Исправьте тип неисправного имущества в элементах таблицы jsonConfig (струнная, а не булевая)\nДобавить сценарий локального репочекера ('npm run test:repo')",
+        "pt": "Corrigir o tipo de propriedade desactivada nos itens da tabela jsonConfig (texto, não booleano)\nAdicionar script de repochecker local (`npm execute test:repo`)",
+        "nl": "Fix uitgeschakeld eigenschap type in jsonConfig tabel items (string, niet boolean)\nVoeg lokaal repochecker script toe ( npm run test:repo",
+        "fr": "Correction du type de propriété handicapé dans les éléments de table de jsonConfig (chaîne, pas booléenne)\nAjouter le script local repochecker (`npm run test:repo`)",
+        "it": "Fix disabilitati tipo di proprietà in jsonConfig articoli da tavolo (string, non boolean)\nAggiungi script repochecker locale (`npm run test:repo`)",
+        "es": "Tipo de propiedad discapacitada en jsonConfig table items (string, not boolean)\nAñada el script de repochecker local (`npm prueba de ejecución:repo`)",
+        "pl": "Naprawiono nieaktywny typ właściwości w pozycji tabeli jsonConfig (ciąg znaków, nie boolean)\nDodaj lokalny skrypt repochecker ('npm run test: repo')",
+        "uk": "Фіксувати відключений тип нерухомості в jsonConfig Table items (string, не boolean)\nДодати локальний репочекерний скрипт (`npm run test:repo`)",
+        "zh-cn": "在 jsonConfig 表格项目中修复已禁用的属性类型( 字符串, 不是布尔)\n添加本地复检脚本( “ npm 运行测试 : repo ” )"
+      },
       "0.3.3": {
         "en": "Fix jsonConfig schema warnings: button color, remove unsupported table properties",
         "de": "JsonConfig-Schemawarnungen beheben: Knopffarbe, ununterstützte Tabelleneigenschaften entfernen",
