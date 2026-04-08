@@ -134,6 +134,9 @@ Each DTU creates a device node using its serial number as ID (e.g. `hoymiles.0.4
 Cloud stations create aggregated device nodes (e.g. `hoymiles.0.station-12345.*`).
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@Eistee82) Fix jsonConfig schema warnings: button color, remove unsupported table properties
+
 ### 0.3.2 (2026-04-03)
 - (@Eistee82) Fix remaining responsive layout issues for repochecker (staticText, header, divider)
 
