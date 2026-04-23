@@ -190,6 +190,19 @@
         "def": false
       },
       "native": {}
+    },
+    {
+      "_id": "info.cloudLastError",
+      "type": "state",
+      "common": {
+        "name": "Last cloud connection error",
+        "role": "text",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
     }
   ],
   "objects": []

@@ -10,6 +10,14 @@ function assertData(data, label) {
     }
     return data;
 }
+export class CloudAuthError extends Error {
+    code;
+    constructor(message, code = "") {
+        super(message);
+        this.name = "CloudAuthError";
+        this.code = code;
+    }
+}
 class CloudConnection {
     token;
     user;
@@ -34,6 +42,7 @@ class CloudConnection {
         this.tokenRefreshPromise = null;
     }
     async login() {
+        let lastTechError;
         for (const challenge of this.credentials) {
             try {
                 const token = await this.tryLogin(challenge);
@@ -43,15 +52,22 @@ class CloudConnection {
                     return this.token;
                 }
             }
-            catch {
+            catch (err) {
+                if (err instanceof CloudAuthError) {
+                    throw err;
+                }
+                lastTechError = err;
             }
+        }
+        if (lastTechError instanceof Error) {
+            throw lastTechError;
         }
         throw new Error("Login failed: all authentication strategies rejected");
     }
     async tryLogin(challenge) {
         const preInsp = await this._post("/iam/pub/3/auth/pre-insp", { u: this.user });
         if (preInsp.status !== "0") {
-            throw new Error(`Pre-inspect failed: ${preInsp.message}`);
+            throw new CloudAuthError(preInsp.message || "Pre-inspect failed", preInsp.status);
         }
         const preData = assertData(preInsp.data, "Pre-inspect");
         const { n: nonce, a: salt } = preData;
@@ -61,7 +77,10 @@ class CloudConnection {
             ch,
             n: nonce,
         });
-        return result.status === "0" && result.data?.token ? result.data.token : null;
+        if (result.status !== "0") {
+            throw new CloudAuthError(result.message || "Login rejected", result.status);
+        }
+        return result.data?.token ?? null;
     }
     async ensureToken() {
         if (this.tokenRefreshPromise) {

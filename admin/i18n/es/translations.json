@@ -24,5 +24,6 @@
     "slowPollFactorHelp": "Los datos de configuración y alarmas cambian raramente. Solo se consultan cada N ciclos de datos para reducir la carga. Por defecto: 6 (= cada 30 segundos con intervalo de 5s).",
     "tabCloud": "Nube (S-Miles)",
     "tabLocal": "Conexión local",
-    "testConnectionButton": "Probar conexión"
+    "testConnectionButton": "Probar conexión",
+    "cloudAuthError": "Cloud login failed — automatic retries have been stopped to prevent your Hoymiles account from being locked out. Please verify email and password, then save."
 }

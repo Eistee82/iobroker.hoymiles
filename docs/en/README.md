@@ -293,6 +293,7 @@ Meter states are created automatically when meter data is first received from th
 |-------|------|-------------|
 | `info.connection` | boolean | Any device connected (local or cloud) |
 | `info.cloudConnected` | boolean | Cloud API connected |
+| `info.cloudLastError` | string | Last permanent cloud login error (empty when OK). Non-empty values pause automatic retries until credentials are corrected. |
 
 ## Protocol
 

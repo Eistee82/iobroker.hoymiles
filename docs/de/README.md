@@ -293,6 +293,7 @@ Meter-States werden automatisch erstellt wenn erstmals Zählerdaten von der DTU 
 |------------|-----|--------------|
 | `info.connection` | boolean | Mindestens ein Gerät verbunden (lokal oder Cloud) |
 | `info.cloudConnected` | boolean | Cloud-API verbunden |
+| `info.cloudLastError` | string | Letzter permanenter Cloud-Anmeldefehler (leer bei OK). Nicht-leere Werte pausieren automatische Wiederholungsversuche bis die Zugangsdaten korrigiert sind. |
 
 ## Protokoll
 

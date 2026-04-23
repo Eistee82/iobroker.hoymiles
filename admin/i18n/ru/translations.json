@@ -24,5 +24,6 @@
     "slowPollFactorHelp": "Данные конфигурации и тревог меняются редко. Они запрашиваются только каждый N-й цикл данных для снижения нагрузки. По умолчанию: 6 (= каждые 30 секунд при интервале 5 секунд).",
     "tabCloud": "Облако (S-Miles)",
     "tabLocal": "Локальное подключение",
-    "testConnectionButton": "Проверить соединение"
+    "testConnectionButton": "Проверить соединение",
+    "cloudAuthError": "Cloud login failed — automatic retries have been stopped to prevent your Hoymiles account from being locked out. Please verify email and password, then save."
 }

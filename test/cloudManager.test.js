@@ -1,5 +1,6 @@
 import assert from "node:assert";
 import CloudManager from "../build/lib/cloudManager.js";
+import { CloudAuthError } from "../build/lib/cloudConnection.js";
 
 // Minimal mock adapter matching the HoymilesAdapter interface
 function makeMockAdapter() {
@@ -995,5 +996,140 @@ describe("CloudManager – multiple stations", function () {
 		assert.ok(createdObjects.includes("station-2"), "station-2 should be created");
 
 		manager.stop();
+	});
+});
+
+// ============================================================
+// CloudManager – auth error handling
+// ============================================================
+describe("CloudManager – auth error handling", function () {
+	function makeTrackingAdapter() {
+		const states = new Map();
+		const timers = new Set();
+		return {
+			states,
+			log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+			devices: new Map(),
+			setStateAsync: async (id, val) => {
+				states.set(id, val && typeof val === "object" ? val.val : val);
+			},
+			getStateAsync: async () => null,
+			extendObjectAsync: async () => {},
+			setObjectNotExistsAsync: async () => {},
+			updateConnectionState: async () => {},
+			subscribeStates: () => {},
+			unsubscribeStates: () => {},
+			setTimeout: (fn, ms) => {
+				const id = globalThis.setTimeout(fn, ms);
+				timers.add(id);
+				return id;
+			},
+			clearTimeout: id => {
+				if (id) {
+					globalThis.clearTimeout(id);
+					timers.delete(id);
+				}
+			},
+			_timerCount: () => timers.size,
+		};
+	}
+
+	it("sets info.cloudLastError and stops retrying on CloudAuthError", async function () {
+		const adapter = makeTrackingAdapter();
+		const manager = new CloudManager({
+			adapter,
+			protobuf: {},
+			cloudUser: "u@x",
+			cloudPassword: "wrong",
+			enableLocal: false,
+			enableCloudRelay: false,
+			dataInterval: 5,
+			slowPollFactor: 6,
+			localContexts: [],
+		});
+
+		manager.cloud.login = async () => {
+			throw new CloudAuthError("Invalid username or password", "1");
+		};
+
+		await manager.start();
+
+		assert.strictEqual(adapter.states.get("info.cloudConnected"), false);
+		assert.strictEqual(adapter.states.get("info.cloudLastError"), "Invalid username or password");
+		assert.strictEqual(adapter._timerCount(), 0, "no retry timer should be scheduled after CloudAuthError");
+	});
+
+	it("still retries on transient (non-auth) errors", async function () {
+		const adapter = makeTrackingAdapter();
+		const manager = new CloudManager({
+			adapter,
+			protobuf: {},
+			cloudUser: "u@x",
+			cloudPassword: "good",
+			enableLocal: false,
+			enableCloudRelay: false,
+			dataInterval: 5,
+			slowPollFactor: 6,
+			localContexts: [],
+		});
+
+		manager.cloud.login = async () => {
+			throw new Error("ETIMEDOUT");
+		};
+
+		await manager.start();
+
+		assert.ok(adapter._timerCount() >= 1, "transient error should schedule a retry");
+		manager.stop();
+	});
+
+	it("fresh manager instance attempts login again after previous auth error", async function () {
+		const adapter = makeTrackingAdapter();
+
+		// Session 1: wrong password — triggers CloudAuthError, no retry
+		const manager1 = new CloudManager({
+			adapter,
+			protobuf: {},
+			cloudUser: "u@x",
+			cloudPassword: "wrong",
+			enableLocal: false,
+			enableCloudRelay: false,
+			dataInterval: 5,
+			slowPollFactor: 6,
+			localContexts: [],
+		});
+		manager1.cloud.login = async () => {
+			throw new CloudAuthError("Invalid username or password", "1");
+		};
+		await manager1.start();
+		assert.strictEqual(adapter.states.get("info.cloudLastError"), "Invalid username or password");
+
+		// Session 2: simulates adapter restart with corrected credentials
+		const manager2 = new CloudManager({
+			adapter,
+			protobuf: {},
+			cloudUser: "u@x",
+			cloudPassword: "correct",
+			enableLocal: false,
+			enableCloudRelay: false,
+			dataInterval: 5,
+			slowPollFactor: 6,
+			localContexts: [],
+		});
+		let loginCalls = 0;
+		manager2.cloud.login = async () => {
+			loginCalls++;
+			manager2.cloud.token = "token-abc";
+			manager2.cloud.tokenTime = Date.now();
+			return "token-abc";
+		};
+		try {
+			await manager2._initCloudServices();
+		} catch {
+			// discoverDevices will fail due to missing mocks — acceptable for this test
+		}
+		assert.strictEqual(loginCalls, 1, "new manager instance must attempt login again");
+
+		manager2.stop();
 	});
 });

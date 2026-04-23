@@ -24,5 +24,6 @@
     "slowPollFactorHelp": "Configuratie- en alarmgegevens veranderen zelden. Ze worden slechts elke Nde datacyclus opgevraagd om de belasting te verminderen. Standaard: 6 (= elke 30 seconden bij een interval van 5s).",
     "tabCloud": "Cloud (S-Miles)",
     "tabLocal": "Lokale verbinding",
-    "testConnectionButton": "Verbinding testen"
+    "testConnectionButton": "Verbinding testen",
+    "cloudAuthError": "Cloud login failed — automatic retries have been stopped to prevent your Hoymiles account from being locked out. Please verify email and password, then save."
 }
