@@ -112,6 +112,7 @@ class CloudManager {
         await this.cloud.login();
         this.adapter.log.info("Cloud login successful");
         await this.adapter.setStateAsync("info.cloudConnected", true, true);
+        await this.adapter.setStateAsync("info.cloudLastError", "", true);
         await this.adapter.updateConnectionState();
         await this._discoverDevices();
         const hasActiveRelay = this.enableCloudRelay && this.enableLocal;

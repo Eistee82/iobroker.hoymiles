@@ -1083,6 +1083,39 @@ describe("CloudManager – auth error handling", function () {
 		manager.stop();
 	});
 
+	it("clears info.cloudLastError on successful login (even if a stale error was persisted)", async function () {
+		const adapter = makeTrackingAdapter();
+		// Pre-populate a stale error as it would be after a previous failed login
+		adapter.states.set("info.cloudLastError", "Old auth failure");
+
+		const manager = new CloudManager({
+			adapter,
+			protobuf: {},
+			cloudUser: "u@x",
+			cloudPassword: "correct",
+			enableLocal: false,
+			enableCloudRelay: false,
+			dataInterval: 5,
+			slowPollFactor: 6,
+			localContexts: [],
+		});
+		manager.cloud.login = async () => {
+			manager.cloud.token = "token-abc";
+			manager.cloud.tokenTime = Date.now();
+			return "token-abc";
+		};
+
+		try {
+			await manager._initCloudServices();
+		} catch {
+			// discoverDevices fails due to missing mocks — acceptable
+		}
+
+		assert.strictEqual(adapter.states.get("info.cloudLastError"), "", "should clear stale auth error on success");
+		assert.strictEqual(adapter.states.get("info.cloudConnected"), true);
+		manager.stop();
+	});
+
 	it("fresh manager instance attempts login again after previous auth error", async function () {
 		const adapter = makeTrackingAdapter();
 
