@@ -25,5 +25,5 @@
     "tabCloud": "云端 (S-Miles)",
     "tabLocal": "本地连接",
     "testConnectionButton": "测试连接",
-    "cloudAuthError": "Cloud login failed — automatic retries have been stopped to prevent your Hoymiles account from being locked out. Please verify email and password, then save."
+    "cloudAuthErrorLabel": "Last cloud login error (empty = OK; non-empty suspends automatic retries to prevent your Hoymiles account from being locked out)"
 }

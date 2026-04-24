@@ -231,20 +231,13 @@
             }
         },
         "_cloudAuthError": {
-            "type": "staticText",
-            "text": "cloudAuthError",
+            "type": "state",
+            "oid": "info.cloudLastError",
+            "control": "text",
+            "readOnly": true,
+            "label": "cloudAuthErrorLabel",
             "newLine": true,
-            "style": {
-                "color": "#d32f2f",
-                "fontWeight": "bold",
-                "fontSize": 14,
-                "padding": "8px 12px",
-                "border": "1px solid #d32f2f",
-                "borderRadius": 4,
-                "marginTop": 8,
-                "backgroundColor": "rgba(211, 47, 47, 0.08)"
-            },
-            "hidden": "!_alive || !_value('info.cloudLastError')",
+            "size": "normal",
             "xs": 12,
             "sm": 12,
             "md": 12,
