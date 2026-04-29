@@ -1,4 +1,4 @@
-import CloudConnection from "./cloudConnection.js";
+import CloudConnection, { CloudAuthError } from "./cloudConnection.js";
 import CloudPoller from "./cloudPoller.js";
 import DeviceContext, { type HoymilesAdapter } from "./deviceContext.js";
 import type { ProtobufHandler } from "./protobufHandler.js";
@@ -38,6 +38,7 @@ class CloudManager {
 	private cloudRetryDelay: number;
 	private retryTimer: ioBroker.Timeout | undefined;
 	private deferredMatchTimer: ioBroker.Timeout | undefined;
+	private authErrorActive: boolean;
 
 	/**
 	 * @param options - Configuration for the cloud manager
@@ -58,6 +59,7 @@ class CloudManager {
 		this.pendingCloudMatches = new Map();
 		this.stationDevices = new Set();
 		this.cloudRetryDelay = CLOUD_RETRY_INITIAL_MS;
+		this.authErrorActive = false;
 	}
 
 	/** Start cloud login, device discovery, and polling. */
@@ -65,6 +67,10 @@ class CloudManager {
 		try {
 			await this._initCloudServices();
 		} catch (err) {
+			if (err instanceof CloudAuthError) {
+				await this._handleAuthError(err);
+				return;
+			}
 			this.adapter.log.error(`Cloud login failed: ${errorMessage(err)}`);
 			await this.adapter.setStateAsync("info.cloudConnected", false, true);
 			await this.adapter.updateConnectionState();
@@ -165,6 +171,8 @@ class CloudManager {
 		await this.cloud.login();
 		this.adapter.log.info("Cloud login successful");
 		await this.adapter.setStateAsync("info.cloudConnected", true, true);
+		// Clear any previous auth error — a successful login means the credentials are valid
+		await this.adapter.setStateAsync("info.cloudLastError", "", true);
 		await this.adapter.updateConnectionState();
 
 		await this._discoverDevices();
@@ -186,8 +194,8 @@ class CloudManager {
 
 	/** Retry cloud login with exponential backoff (60s → 120s → 240s → max 600s). */
 	private _retryLogin(): void {
-		if (this.retryTimer) {
-			return; // Already retrying
+		if (this.retryTimer || this.authErrorActive) {
+			return; // Already retrying, or paused due to permanent auth error
 		}
 		const delay = this.cloudRetryDelay;
 		this.adapter.log.info(`Will retry cloud login in ${Math.round(delay / 1000)}s...`);
@@ -197,11 +205,45 @@ class CloudManager {
 				await this._initCloudServices();
 				this.cloudRetryDelay = CLOUD_RETRY_INITIAL_MS; // Reset on success
 			} catch (retryErr) {
+				if (retryErr instanceof CloudAuthError) {
+					await this._handleAuthError(retryErr);
+					return;
+				}
 				this.adapter.log.error(`Cloud login retry failed: ${errorMessage(retryErr)}`);
 				this.cloudRetryDelay = Math.min(this.cloudRetryDelay * 2, CLOUD_RETRY_MAX_MS);
 				this._retryLogin();
 			}
 		}, delay);
+	}
+
+	/**
+	 * Handle a permanent authentication failure: stop retrying, persist the error so
+	 * the admin UI can surface it, register a system notification (visible as red
+	 * banner in the admin header), and leave the cloud marked offline until the user
+	 * updates credentials. An adapter restart (triggered by config change) resets
+	 * authErrorActive via the new CloudManager instance.
+	 *
+	 * @param err - The auth error reported by the cloud
+	 */
+	private async _handleAuthError(err: CloudAuthError): Promise<void> {
+		this.authErrorActive = true;
+		this.adapter.log.error(
+			`Cloud authentication failed: ${err.message}. Further retries are suspended until credentials are updated — otherwise the Hoymiles account may be locked out.`,
+		);
+		try {
+			await this.adapter.setStateAsync("info.cloudConnected", false, true);
+			await this.adapter.setStateAsync("info.cloudLastError", err.message, true);
+			await this.adapter.updateConnectionState();
+			if (typeof this.adapter.registerNotification === "function") {
+				await this.adapter.registerNotification(
+					"hoymiles",
+					"cloudAuth",
+					`Cloud authentication failed: ${err.message}`,
+				);
+			}
+		} catch (stateErr) {
+			this.adapter.log.warn(`Failed to persist cloud auth error state: ${errorMessage(stateErr)}`);
+		}
 	}
 
 	/** Discover all stations and DTUs from the cloud account. */

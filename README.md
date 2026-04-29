@@ -134,6 +134,11 @@ Each DTU creates a device node using its serial number as ID (e.g. `hoymiles.0.4
 Cloud stations create aggregated device nodes (e.g. `hoymiles.0.station-12345.*`).
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@Eistee82) Stop retry loop on permanent cloud auth errors to prevent Hoymiles account lockout
+- (@Eistee82) Add `info.cloudLastError` state and raise an ioBroker alert notification with reset instructions on permanent cloud auth errors
+- (@Eistee82) Bump axios to 1.15.0 and protobufjs to 8.0.1
+
 ### 0.3.4 (2026-04-08)
 - (@Eistee82) Fix disabled property type in jsonConfig table items (string, not boolean)
 - (@Eistee82) Add local repochecker script (`npm run test:repo`)

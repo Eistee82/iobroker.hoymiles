@@ -1,4 +1,4 @@
-import CloudConnection from "./cloudConnection.js";
+import CloudConnection, { CloudAuthError } from "./cloudConnection.js";
 import CloudPoller from "./cloudPoller.js";
 import DeviceContext from "./deviceContext.js";
 import { stationChannels, stationStates } from "./stateDefinitions.js";
@@ -19,6 +19,7 @@ class CloudManager {
     cloudRetryDelay;
     retryTimer;
     deferredMatchTimer;
+    authErrorActive;
     constructor(options) {
         this.adapter = options.adapter;
         this.protobuf = options.protobuf;
@@ -32,12 +33,17 @@ class CloudManager {
         this.pendingCloudMatches = new Map();
         this.stationDevices = new Set();
         this.cloudRetryDelay = CLOUD_RETRY_INITIAL_MS;
+        this.authErrorActive = false;
     }
     async start() {
         try {
             await this._initCloudServices();
         }
         catch (err) {
+            if (err instanceof CloudAuthError) {
+                await this._handleAuthError(err);
+                return;
+            }
             this.adapter.log.error(`Cloud login failed: ${errorMessage(err)}`);
             await this.adapter.setStateAsync("info.cloudConnected", false, true);
             await this.adapter.updateConnectionState();
@@ -106,6 +112,7 @@ class CloudManager {
         await this.cloud.login();
         this.adapter.log.info("Cloud login successful");
         await this.adapter.setStateAsync("info.cloudConnected", true, true);
+        await this.adapter.setStateAsync("info.cloudLastError", "", true);
         await this.adapter.updateConnectionState();
         await this._discoverDevices();
         const hasActiveRelay = this.enableCloudRelay && this.enableLocal;
@@ -123,7 +130,7 @@ class CloudManager {
         }
     }
     _retryLogin() {
-        if (this.retryTimer) {
+        if (this.retryTimer || this.authErrorActive) {
             return;
         }
         const delay = this.cloudRetryDelay;
@@ -135,11 +142,30 @@ class CloudManager {
                 this.cloudRetryDelay = CLOUD_RETRY_INITIAL_MS;
             }
             catch (retryErr) {
+                if (retryErr instanceof CloudAuthError) {
+                    await this._handleAuthError(retryErr);
+                    return;
+                }
                 this.adapter.log.error(`Cloud login retry failed: ${errorMessage(retryErr)}`);
                 this.cloudRetryDelay = Math.min(this.cloudRetryDelay * 2, CLOUD_RETRY_MAX_MS);
                 this._retryLogin();
             }
         }, delay);
+    }
+    async _handleAuthError(err) {
+        this.authErrorActive = true;
+        this.adapter.log.error(`Cloud authentication failed: ${err.message}. Further retries are suspended until credentials are updated — otherwise the Hoymiles account may be locked out.`);
+        try {
+            await this.adapter.setStateAsync("info.cloudConnected", false, true);
+            await this.adapter.setStateAsync("info.cloudLastError", err.message, true);
+            await this.adapter.updateConnectionState();
+            if (typeof this.adapter.registerNotification === "function") {
+                await this.adapter.registerNotification("hoymiles", "cloudAuth", `Cloud authentication failed: ${err.message}`);
+            }
+        }
+        catch (stateErr) {
+            this.adapter.log.warn(`Failed to persist cloud auth error state: ${errorMessage(stateErr)}`);
+        }
     }
     async _discoverDevices() {
         const stationList = await this.cloud.getStationList();

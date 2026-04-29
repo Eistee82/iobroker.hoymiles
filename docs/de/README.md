@@ -293,6 +293,7 @@ Meter-States werden automatisch erstellt wenn erstmals Zählerdaten von der DTU 
 |------------|-----|--------------|
 | `info.connection` | boolean | Mindestens ein Gerät verbunden (lokal oder Cloud) |
 | `info.cloudConnected` | boolean | Cloud-API verbunden |
+| `info.cloudLastError` | string | Letzter permanenter Cloud-Anmeldefehler (leer bei OK). Nicht-leere Werte pausieren automatische Wiederholungsversuche bis die Zugangsdaten korrigiert sind. |
 
 ## Protokoll
 
@@ -334,3 +335,4 @@ Protokoll-Reverse-Engineering durch die Community:
 ### Cloud-Login fehlgeschlagen
 - Prüfe E-Mail und Passwort des S-Miles Kontos
 - Stelle sicher, dass du dich unter https://global.hoymiles.com/website/login einloggen kannst
+- Bei einem dauerhaften Authentifizierungsfehler (falsche Zugangsdaten, gesperrtes Konto) stoppt der Adapter den Wiederholungs-Loop, um weitere Kontosperren zu vermeiden. Der Fehler wird nach `info.cloudLastError` geschrieben und eine ioBroker-Alert-Notification (Scope `hoymiles`, Kategorie `cloudAuth`) ausgelöst. Korrigiere die Zugangsdaten und speichere die Konfiguration, um den State zu löschen und Wiederholungsversuche fortzusetzen.

@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import CloudConnection from "../build/lib/cloudConnection.js";
+import CloudConnection, { CloudAuthError } from "../build/lib/cloudConnection.js";
 
 // ============================================================
 // cloudConnection – constructor and input validation
@@ -201,5 +201,93 @@ describe("cloudConnection – getModuleRealtimeData error handling", function ()
 
 		const result = await cloud.getModuleRealtimeData(1, "MI123", 1, "2026-04-01", ["pv_power"]);
 		assert.strictEqual(result, null, "should return null on error");
+	});
+});
+
+describe("cloudConnection – login error propagation", function () {
+	let originalPost;
+
+	beforeEach(function () {
+		originalPost = CloudConnection.prototype._post;
+	});
+
+	afterEach(function () {
+		CloudConnection.prototype._post = originalPost;
+	});
+
+	it("throws CloudAuthError when pre-inspect returns status=1 with message", async function () {
+		CloudConnection.prototype._post = async function () {
+			return { status: "1", message: "User does not exist" };
+		};
+		const cloud = new CloudConnection("u@x", "wrong");
+		await assert.rejects(
+			() => cloud.login(),
+			err => {
+				assert.ok(err instanceof CloudAuthError, `expected CloudAuthError, got ${err.constructor.name}`);
+				assert.strictEqual(err.message, "User does not exist");
+				assert.strictEqual(err.code, "1");
+				return true;
+			},
+		);
+	});
+
+	it("throws CloudAuthError when login endpoint returns non-zero status", async function () {
+		CloudConnection.prototype._post = async function (apiPath) {
+			if (apiPath.endsWith("/auth/pre-insp")) {
+				return { status: "0", data: { n: "nonce-123" } };
+			}
+			return { status: "1", message: "Invalid password" };
+		};
+		const cloud = new CloudConnection("u@x", "wrong");
+		await assert.rejects(
+			() => cloud.login(),
+			err => {
+				assert.ok(err instanceof CloudAuthError);
+				assert.strictEqual(err.message, "Invalid password");
+				return true;
+			},
+		);
+	});
+
+	it("does not classify transient network errors as CloudAuthError", async function () {
+		let calls = 0;
+		CloudConnection.prototype._post = async function () {
+			calls++;
+			throw new Error("ETIMEDOUT");
+		};
+		const cloud = new CloudConnection("u@x", "password");
+		await assert.rejects(
+			() => cloud.login(),
+			err => {
+				assert.ok(!(err instanceof CloudAuthError), "transient errors must not be CloudAuthError");
+				assert.match(err.message, /ETIMEDOUT|Login failed/);
+				return true;
+			},
+		);
+		assert.ok(calls >= 2, "should have tried at least two strategies");
+	});
+});
+
+describe("CloudAuthError", function () {
+	it("is an instance of Error", function () {
+		const err = new CloudAuthError("bad credentials", "1");
+		assert.ok(err instanceof Error);
+		assert.ok(err instanceof CloudAuthError);
+	});
+
+	it("has name 'CloudAuthError'", function () {
+		const err = new CloudAuthError("bad credentials", "1");
+		assert.strictEqual(err.name, "CloudAuthError");
+	});
+
+	it("exposes the server-reported code and message", function () {
+		const err = new CloudAuthError("Invalid username or password", "1");
+		assert.strictEqual(err.message, "Invalid username or password");
+		assert.strictEqual(err.code, "1");
+	});
+
+	it("code defaults to empty string when omitted", function () {
+		const err = new CloudAuthError("bad credentials");
+		assert.strictEqual(err.code, "");
 	});
 });

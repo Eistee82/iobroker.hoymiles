@@ -109,6 +109,26 @@ interface FirmwareStatus {
 	tid: string;
 }
 
+/**
+ * Permanent authentication failure against the Hoymiles cloud.
+ * Thrown when pre-inspect or login endpoints return a non-zero status the server
+ * considers a client-side auth error (wrong credentials, account locked, user not found).
+ * Distinct from network/5xx errors, which are transient and should be retried.
+ */
+export class CloudAuthError extends Error {
+	public readonly code: string;
+
+	/**
+	 * @param message - Server-reported error message
+	 * @param code - Server-reported status code (e.g. "1" for rejected)
+	 */
+	constructor(message: string, code = "") {
+		super(message);
+		this.name = "CloudAuthError";
+		this.code = code;
+	}
+}
+
 /** Hoymiles S-Miles Cloud API client for station data and device management. */
 class CloudConnection {
 	public token: string | null;
@@ -148,6 +168,7 @@ class CloudConnection {
 
 	/** Authenticate with the Hoymiles cloud and obtain a session token. */
 	async login(): Promise<string> {
+		let lastTechError: unknown;
 		for (const challenge of this.credentials) {
 			try {
 				const token = await this.tryLogin(challenge);
@@ -156,11 +177,19 @@ class CloudConnection {
 					this.tokenTime = Date.now();
 					return this.token;
 				}
-			} catch {
-				// Strategy failed (e.g. pre-inspect rejected), try next
+			} catch (err) {
+				// Permanent auth errors bubble up immediately — no further strategies.
+				if (err instanceof CloudAuthError) {
+					throw err;
+				}
+				// Transient error (network/5xx): remember and try next strategy.
+				lastTechError = err;
 			}
 		}
 
+		if (lastTechError instanceof Error) {
+			throw lastTechError;
+		}
 		throw new Error("Login failed: all authentication strategies rejected");
 	}
 
@@ -168,13 +197,14 @@ class CloudConnection {
 	 * Attempt a single login flow: pre-inspect to get nonce, then login with the given credential hash.
 	 *
 	 * @param challenge - The credential hash to use for authentication
-	 * @returns The session token if successful, or null if the strategy was rejected
+	 * @returns The session token on success, or null if the server accepted the request but returned no token
+	 * @throws CloudAuthError when the server reports a permanent auth failure (wrong credentials, locked account)
 	 */
 	private async tryLogin(challenge: string): Promise<string | null> {
-		const preInsp = await this._post("/iam/pub/3/auth/pre-insp", { u: this.user });
+		const preInsp = await this._post<PreInspectData>("/iam/pub/3/auth/pre-insp", { u: this.user });
 
 		if (preInsp.status !== "0") {
-			throw new Error(`Pre-inspect failed: ${preInsp.message}`);
+			throw new CloudAuthError(preInsp.message || "Pre-inspect failed", preInsp.status);
 		}
 
 		const preData = assertData<PreInspectData>(preInsp.data, "Pre-inspect");
@@ -188,7 +218,11 @@ class CloudConnection {
 			n: nonce,
 		});
 
-		return result.status === "0" && result.data?.token ? result.data.token : null;
+		if (result.status !== "0") {
+			throw new CloudAuthError(result.message || "Login rejected", result.status);
+		}
+
+		return result.data?.token ?? null;
 	}
 
 	/** Re-login if the current token is older than 1 hour. */

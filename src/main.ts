@@ -123,6 +123,9 @@ class Hoymiles extends utils.Adapter {
 				);
 			} else {
 				this.log.info("Starting cloud connection to Hoymiles S-Miles API");
+				// Clear persisted auth error from previous session — a fresh start gets a clean slate.
+				// CloudManager will re-populate this state if the new credentials are still wrong.
+				await this.setStateAsync("info.cloudLastError", "", true);
 				this.cloudManager = new CloudManager({
 					adapter: this,
 					protobuf: this.sharedProtobuf,
