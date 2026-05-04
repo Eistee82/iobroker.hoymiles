@@ -135,6 +135,7 @@ Cloud stations create aggregated device nodes (e.g. `hoymiles.0.station-12345.*`
 
 ## Changelog
 ### **WORK IN PROGRESS**
+- (copilot) Adapter requires node.js >= 22 now
 - (@Eistee82) Stop retry loop on permanent cloud auth errors to prevent Hoymiles account lockout
 - (@Eistee82) Add `info.cloudLastError` state and raise an ioBroker alert notification with reset instructions on permanent cloud auth errors
 - (@Eistee82) Bump axios to 1.15.0 and protobufjs to 8.0.1
